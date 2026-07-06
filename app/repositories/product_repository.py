@@ -10,7 +10,13 @@ def get_by_id(db: Session, product_id: int) -> Product | None:
 
 
 def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[Product]:
-    return db.query(Product).offset(skip).limit(limit).all()
+    return (
+        db.query(Product)
+        .order_by(Product.id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
 def create(db: Session, *, name: str, color: str, size: str, price, stock: int) -> Product:

@@ -48,7 +48,14 @@ def update_product(
 
 
 def delete_product(db: Session, product_id: int) -> None:
+    from app.repositories import cart_repository
+
     product = get_product_or_raise(db, product_id)
+    # Si el producto está en algún carrito, esas referencias quedarían
+    # rotas al borrarlo (y Postgres directamente rechaza el delete por
+    # la foreign key). Como el producto deja de existir, no tiene sentido
+    # que siga en ningún carrito.
+    cart_repository.delete_by_product(db, product_id)
     product_repository.delete(db, product)
 
 
