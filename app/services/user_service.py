@@ -15,12 +15,20 @@ class InvalidCredentialsError(Exception):
     pass
 
 
-def register_user(db: Session, *, name: str, email: str, password: str) -> User:
+def register_user(
+    db: Session, *, name: str, email: str, password: str, accepted_terms: bool
+) -> User:
     if user_repository.get_by_email(db, email) is not None:
         raise EmailAlreadyRegisteredError(f"El email {email} ya está registrado.")
 
     password_hash = hash_password(password)
-    return user_repository.create(db, name=name, email=email, password_hash=password_hash)
+    return user_repository.create(
+        db,
+        name=name,
+        email=email,
+        password_hash=password_hash,
+        accepted_terms=accepted_terms,
+    )
 
 
 def authenticate(db: Session, *, email: str, password: str) -> User:
@@ -30,3 +38,19 @@ def authenticate(db: Session, *, email: str, password: str) -> User:
     if not user.is_active:
         raise InvalidCredentialsError("El usuario está inactivo.")
     return user
+
+
+def update_profile(db: Session, *, user: User, name: str | None, email: str | None) -> User:
+    if email is not None and email != user.email:
+        if user_repository.get_by_email(db, email) is not None:
+            raise EmailAlreadyRegisteredError(f"El email {email} ya está registrado.")
+        user.email = email
+    if name is not None:
+        user.name = name
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_account(db: Session, *, user: User) -> None:
+    user_repository.delete(db, user)

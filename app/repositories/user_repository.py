@@ -17,8 +17,18 @@ def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
 
-def create(db: Session, *, name: str, email: str, password_hash: str) -> User:
-    user = User(name=name, email=email, password_hash=password_hash)
+def create(
+    db: Session, *, name: str, email: str, password_hash: str, accepted_terms: bool
+) -> User:
+    from datetime import datetime, timezone
+
+    user = User(
+        name=name,
+        email=email,
+        password_hash=password_hash,
+        accepted_terms=accepted_terms,
+        accepted_terms_at=datetime.now(timezone.utc) if accepted_terms else None,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
