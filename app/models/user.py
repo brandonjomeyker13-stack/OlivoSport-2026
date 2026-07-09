@@ -19,6 +19,12 @@ class User(Base):
     # más roles (ej. "vendedor"), esto se convierte en una tabla Role aparte.
     is_admin = Column(Boolean, default=False, nullable=False)
 
+    # Ley 1581/2012 (Habeas Data, Colombia): exige consentimiento explícito
+    # y verificable para el tratamiento de datos personales. Guardamos el
+    # hecho de que aceptó y CUÁNDO, como evidencia.
+    accepted_terms = Column(Boolean, default=False, nullable=False)
+    accepted_terms_at = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

@@ -16,3 +16,6 @@ class CartItemRead(CartItemBase):
     user_id: int
 
     model_config = ConfigDict(from_attributes=True)
+    
+class CartItemUpdate(BaseModel):
+    quantity: int = Field(..., gt=0)
