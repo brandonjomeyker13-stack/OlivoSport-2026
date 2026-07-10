@@ -15,7 +15,7 @@ Base = declarative_base()
 from app.models.user import User  # noqa: E402,F401
 from app.models.product import Product  # noqa: E402,F401
 from app.models.cart import CartItem  # noqa: E402,F401
-from app.models.order_models import Order, OrderItem  # noqa: E402,F401
+from app.models.order import Order, OrderItem  # noqa: E402,F401
 
 
 def init_db() -> None:
