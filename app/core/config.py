@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     # Config de futuros JWT (cuando agregues login por API)
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Wompi (pasarela de pagos). En Sandbox estas llaves empiezan con
+    # "pub_test_", "prv_test_", etc. En producción, con "pub_prod_".
+    WOMPI_PUBLIC_KEY: str | None = None
+    WOMPI_PRIVATE_KEY: str | None = None
+    WOMPI_INTEGRITY_SECRET: str | None = None
+    WOMPI_EVENTS_SECRET: str | None = None
+    # Colombia: siempre COP.
+    WOMPI_CURRENCY: str = "COP"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

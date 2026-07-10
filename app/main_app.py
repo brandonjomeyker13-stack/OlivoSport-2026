@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.v1 import auth, cart, products
+from app.api.v1 import auth, cart, orders, products
 from app.core.limiter import limiter
 
 app = FastAPI(title="OlivoSport API", version="1.0.0")
@@ -23,10 +23,9 @@ app = FastAPI(title="OlivoSport API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Mientras no tengas el dominio real de tu frontend, deja aquí solo los
-# orígenes de desarrollo que uses (ej. Vite, Create React App, Next.js).
-# Cuando despliegues el frontend, agrega su URL real (ej. "https://olivosport.com")
-# y quita las de localhost si ya no las necesitas.
+# Orígenes fijos: solo desarrollo local. Todo lo de Lovable (preview,
+# iframe de edición, y el sitio publicado) se cubre con el regex de abajo,
+# porque el subdominio de preview cambia por proyecto/sesión.
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -47,6 +46,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
 app.include_router(cart.router, prefix="/api/v1/cart", tags=["cart"])
+app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
 
 
 @app.get("/")
