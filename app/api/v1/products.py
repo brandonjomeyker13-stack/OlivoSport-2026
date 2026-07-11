@@ -77,7 +77,8 @@ def delete_product(
         product_service.delete_product(db, product_id)
     except product_service.ProductNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-
+    except product_service.ProductHasOrdersError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 @router.post("/{product_id}/image", response_model=ProductRead)
 async def upload_image(
@@ -86,7 +87,7 @@ async def upload_image(
     db: Session = Depends(get_db),
     _admin: User = Depends(get_current_admin_user),
 ):
-    # Confirma que el producto existe antes de gastar tiempo subiendo el archivo.
+    # Verifica que el producto existe antes de subir la imagen.
     try:
         product_service.get_product_or_raise(db, product_id)
     except product_service.ProductNotFoundError as exc:
