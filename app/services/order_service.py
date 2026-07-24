@@ -1,6 +1,7 @@
 """Reglas de negocio de pedidos (Order) y checkout con Wompi."""
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -9,6 +10,21 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.order import Order, OrderItem, OrderStatus
 from app.repositories import cart_repository, product_repository
+
+logger = logging.getLogger("olivosport.orders")
+
+# Estados finales que puede reportar Wompi para una transacción. Wompi
+# también puede mandar eventos con status intermedios (ej. "PENDING") que
+# simplemente ignoramos hasta que llegue el estado final.
+_WOMPI_TERMINAL_STATUSES = {"APPROVED", "DECLINED", "VOIDED", "ERROR"}
+
+# Transiciones de LOGÍSTICA válidas (solo la dueña las dispara, vía panel
+# admin). Nunca se puede saltar de PENDING/APPROVED directo a DELIVERED:
+# siempre pasa por IN_TRANSIT primero.
+_DELIVERY_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.APPROVED: {OrderStatus.IN_TRANSIT},
+    OrderStatus.IN_TRANSIT: {OrderStatus.DELIVERED},
+}
 
 # Después de este tiempo sin respuesta de Wompi, asumimos que el usuario
 # abandonó el pago y liberamos el pedido (no bloquea stock ni el producto).
@@ -24,6 +40,10 @@ class InsufficientStockError(Exception):
 
 
 class OrderNotFoundError(Exception):
+    pass
+
+
+class InvalidStatusTransitionError(Exception):
     pass
 
 
@@ -144,15 +164,101 @@ def list_my_orders(db: Session, user_id: int) -> list[Order]:
     )
 
 
-def list_all_orders(db: Session, skip: int = 0, limit: int = 100) -> list[Order]:
+def list_all_orders(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    status: OrderStatus | None = None,
+) -> list[Order]:
     expire_stale_orders(db)
-    return (
-        db.query(Order)
-        .order_by(Order.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    query = db.query(Order)
+    if status is not None:
+        query = query.filter(Order.status == status)
+    return query.order_by(Order.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def update_delivery_status(db: Session, order_id: int, new_status: OrderStatus) -> Order:
+    """Usado por la dueña desde el panel admin para marcar
+    APPROVED -> IN_TRANSIT -> DELIVERED. Nunca permite saltos."""
+    order = get_order_or_raise(db, order_id)
+    allowed = _DELIVERY_TRANSITIONS.get(order.status, set())
+    if new_status not in allowed:
+        raise InvalidStatusTransitionError(
+            f"No se puede pasar de {order.status.value} a {new_status.value}."
+        )
+    order.status = new_status
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def process_wompi_transaction(
+    db: Session,
+    *,
+    reference: str,
+    wompi_status: str,
+    wompi_transaction_id: str,
+) -> Order | None:
+    """Procesa un evento `transaction.updated` YA VERIFICADO (firma
+    correcta) que llega del webhook de Wompi.
+
+    Es idempotente: si Wompi reintenta el mismo evento, no vuelve a
+    descontar stock ni a pisar un estado de logística ya avanzado.
+    Devuelve None si no existe ningún pedido con esa referencia.
+    """
+    order = db.query(Order).filter(Order.reference == reference).first()
+    if order is None:
+        return None
+
+    if wompi_status not in _WOMPI_TERMINAL_STATUSES:
+        # Estados intermedios (ej. "PENDING" del lado de Wompi): no hay
+        # nada que hacer todavía, esperamos el evento final.
+        return order
+
+    new_status = OrderStatus(wompi_status)
+
+    if order.status != OrderStatus.PENDING:
+        # El pedido ya salió de PENDING (mismo evento reprocesado, o ya
+        # avanzó en logística). No lo tocamos: evita reprocesar un pago
+        # ya contabilizado o pisar un estado de entrega más avanzado.
+        if order.wompi_transaction_id != wompi_transaction_id:
+            logger.warning(
+                "Evento de Wompi para pedido %s (status=%s) llegó cuando "
+                "el pedido ya estaba en %s. Se ignora.",
+                order.id, wompi_status, order.status.value,
+            )
+        return order
+
+    if new_status == OrderStatus.APPROVED:
+        # Recién ACÁ se descuenta stock real, dentro de la misma
+        # transacción que confirma el pedido, bloqueando cada producto
+        # (SELECT ... FOR UPDATE) para que dos pagos simultáneos no lean
+        # el mismo stock viejo.
+        for item in order.items:
+            product = product_repository.get_by_id_for_update(db, item.product_id)
+            if product is None:
+                logger.error(
+                    "Pedido %s: producto %s ya no existe al confirmar el pago.",
+                    order.id, item.product_id,
+                )
+                continue
+            if product.stock < item.quantity:
+                # El dinero YA fue cobrado por Wompi — no se puede
+                # "des-cobrar" desde acá. Se deja en 0 y queda para
+                # revisión manual (backorder) en vez de fallar el
+                # webhook y perder la confirmación del pago.
+                logger.error(
+                    "SOBREVENTA en pedido %s: producto %s tenía stock %s, "
+                    "se necesitaban %s. Revisar manualmente.",
+                    order.id, product.id, product.stock, item.quantity,
+                )
+            product_repository.apply_stock_delta(db, product, -item.quantity)
+
+    order.status = new_status
+    order.wompi_transaction_id = wompi_transaction_id
+    db.commit()
+    db.refresh(order)
+    return order
 
 
 def clear_non_approved_references(db: Session, product_id: int) -> None:

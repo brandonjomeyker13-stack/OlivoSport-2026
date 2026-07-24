@@ -26,6 +26,13 @@ class OrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrderStatusUpdate(BaseModel):
+    """Body del PATCH /orders/{id}/status que usa la dueña desde el panel
+    admin. Las transiciones válidas se validan en order_service, no acá."""
+
+    status: OrderStatus
+
+
 class CheckoutResponse(BaseModel):
     """Todo lo que el frontend necesita para abrir el Widget de Wompi."""
 

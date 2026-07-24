@@ -9,6 +9,35 @@ def get_by_id(db: Session, product_id: int) -> Product | None:
     return db.query(Product).filter(Product.id == product_id).first()
 
 
+def get_by_id_for_update(db: Session, product_id: int) -> Product | None:
+    """Igual que get_by_id, pero bloquea la fila (SELECT ... FOR UPDATE)
+    hasta que la transacción actual termine (commit/rollback).
+
+    Úsalo SOLO dentro de un flujo donde quien llama controla el commit
+    final (no hagas commit adentro de un loop que use esto, o sueltas el
+    lock a mitad de camino y dos pagos simultáneos pueden volver a leer
+    el mismo stock "viejo").
+    """
+    return (
+        db.query(Product)
+        .filter(Product.id == product_id)
+        .with_for_update()
+        .first()
+    )
+
+
+def apply_stock_delta(db: Session, product: Product, delta: int) -> Product:
+    """Suma `delta` al stock (negativo para descontar), SIN hacer commit.
+
+    Pensado para usarse junto con get_by_id_for_update dentro de una
+    transacción más grande (ej. procesar un pedido completo con varios
+    productos) donde el commit lo hace el que orquesta todo al final.
+    """
+    product.stock = max(0, product.stock + delta)
+    product.in_stock = product.stock > 0
+    return product
+
+
 def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[Product]:
     return (
         db.query(Product)

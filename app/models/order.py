@@ -28,6 +28,10 @@ class OrderStatus(str, enum.Enum):
     ERROR = "ERROR"
     EXPIRED = "EXPIRED"  # nadie completó el pago a tiempo (abandonado)
 
+    # Logística: solo se llega acá DESPUÉS de APPROVED, nunca directo.
+    IN_TRANSIT = "IN_TRANSIT"  # la dueña ya salió a entregar el pedido
+    DELIVERED = "DELIVERED"  # el cliente ya lo recibió
+
 
 class Order(Base):
     __tablename__ = "orders"
@@ -72,4 +76,3 @@ class OrderItem(Base):
 
     order = relationship("Order", back_populates="items")
     product = relationship("Product")
-    

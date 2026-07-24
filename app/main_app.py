@@ -9,10 +9,11 @@ mezcles con este archivo).
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.v1 import auth
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.v1 import auth, cart, orders, products
+from app.api.v1 import cart, orders, products
 from app.core.limiter import limiter
 
 app = FastAPI(title="OlivoSport API", version="1.0.0")
