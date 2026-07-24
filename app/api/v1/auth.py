@@ -36,7 +36,7 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-    # OAuth2PasswordRequestForm usa "username", aquí lo tratamos como email.
+    # OAuth2PasswordRequestForm expone el email como "username".
     try:
         user = user_service.authenticate(db, email=form_data.username, password=form_data.password)
     except user_service.InvalidCredentialsError as exc:
@@ -48,10 +48,7 @@ def login(
     return {"access_token": token, "token_type": "bearer"}
 
 
-# --- Derechos ARCO (Ley 1581/2012, Habeas Data): Acceso, Rectificación,
-# Cancelación (supresión), Oposición. Estos tres endpoints le dan al
-# usuario control directo sobre sus propios datos, sin depender de que
-# un admin lo haga a mano. ---
+# Endpoints de datos personales: acceso, rectificación y supresión.
 
 
 @router.get("/me", response_model=UserRead)

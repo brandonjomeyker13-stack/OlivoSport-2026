@@ -17,15 +17,13 @@ from app.core.limiter import limiter
 
 app = FastAPI(title="OlivoSport API", version="1.0.0")
 
-# Rate limiting global (protege sobre todo /auth/login y /auth/register
-# de ataques de fuerza bruta). Los límites puntuales se definen en cada
-# endpoint con @limiter.limit(...).
+# Rate limit global para proteger principalmente /auth/login y /auth/register.
+# Los límites puntuales se definen en cada endpoint con @limiter.limit(...).
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Orígenes fijos: solo desarrollo local. Todo lo de Lovable (preview,
-# iframe de edición, y el sitio publicado) se cubre con el regex de abajo,
-# porque el subdominio de preview cambia por proyecto/sesión.
+# CORS para orígenes locales y dominios Lovable. El regex cubre el subdominio
+# de preview, que cambia por proyecto/sesión.
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",

@@ -46,8 +46,7 @@ async def upload_product_image(file: UploadFile, product_id: int) -> str:
         )
 
     extension = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
-    # Nombre único por producto: si vuelven a subir, no pisa el nombre pero
-    # sí conviene borrar la anterior (ver nota en el servicio).
+    # Nombre único por producto para evitar sobrescribir el archivo anterior.
     path = f"product-{product_id}-{uuid.uuid4().hex}.{extension}"
 
     client = _get_client()

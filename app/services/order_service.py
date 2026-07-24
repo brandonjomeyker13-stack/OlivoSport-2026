@@ -2,12 +2,17 @@
 
 import hashlib
 import secrets
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.order import Order, OrderItem, OrderStatus
 from app.repositories import cart_repository, product_repository
+
+# Después de este tiempo sin respuesta de Wompi, asumimos que el usuario
+# abandonó el pago y liberamos el pedido (no bloquea stock ni el producto).
+PENDING_ORDER_TTL_HOURS = 2
 
 
 class EmptyCartError(Exception):
@@ -24,6 +29,24 @@ class OrderNotFoundError(Exception):
 
 class WompiNotConfiguredError(Exception):
     pass
+
+
+def expire_stale_orders(db: Session) -> int:
+    """Marca como EXPIRED los pedidos PENDING más viejos que el TTL.
+
+    Se llama de forma "perezosa" (al listar o crear pedidos) en vez de
+    necesitar un cron aparte: para el volumen de una tienda chica/mediana
+    alcanza y sobra, y es una línea menos de infraestructura que mantener.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=PENDING_ORDER_TTL_HOURS)
+    updated = (
+        db.query(Order)
+        .filter(Order.status == OrderStatus.PENDING, Order.created_at < cutoff)
+        .update({"status": OrderStatus.EXPIRED}, synchronize_session=False)
+    )
+    if updated:
+        db.commit()
+    return updated
 
 
 def _generate_reference(order_id: int) -> str:
@@ -44,6 +67,8 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
     """Congela el carrito actual del usuario en un pedido nuevo, en estado
     PENDING. Valida stock, pero NO lo descuenta todavía (eso se hace recién
     cuando Wompi confirma el pago, vía webhook)."""
+    expire_stale_orders(db)
+
     cart_items = cart_repository.list_by_user(db, user_id)
     if not cart_items:
         raise EmptyCartError("El carrito está vacío.")
@@ -110,6 +135,7 @@ def get_order_or_raise(db: Session, order_id: int, *, user_id: int | None = None
 
 
 def list_my_orders(db: Session, user_id: int) -> list[Order]:
+    expire_stale_orders(db)
     return (
         db.query(Order)
         .filter(Order.user_id == user_id)
@@ -119,6 +145,7 @@ def list_my_orders(db: Session, user_id: int) -> list[Order]:
 
 
 def list_all_orders(db: Session, skip: int = 0, limit: int = 100) -> list[Order]:
+    expire_stale_orders(db)
     return (
         db.query(Order)
         .order_by(Order.created_at.desc())
@@ -126,3 +153,21 @@ def list_all_orders(db: Session, skip: int = 0, limit: int = 100) -> list[Order]
         .limit(limit)
         .all()
     )
+
+
+def clear_non_approved_references(db: Session, product_id: int) -> None:
+    """Borra las referencias a este producto en pedidos que NO son ventas
+    reales (todo menos APPROVED). Se usa antes de eliminar un producto:
+    los pedidos APPROVED se dejan intactos a propósito, son historial de
+    ventas y no se tocan nunca."""
+    non_approved_order_ids = [
+        row[0]
+        for row in db.query(Order.id).filter(Order.status != OrderStatus.APPROVED).all()
+    ]
+    if not non_approved_order_ids:
+        return
+    db.query(OrderItem).filter(
+        OrderItem.product_id == product_id,
+        OrderItem.order_id.in_(non_approved_order_ids),
+    ).delete(synchronize_session=False)
+    db.commit()

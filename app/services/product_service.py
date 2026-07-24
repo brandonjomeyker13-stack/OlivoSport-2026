@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
@@ -13,6 +14,10 @@ class ProductNotFoundError(Exception):
 
 
 class InsufficientStockError(Exception):
+    pass
+
+
+class ProductHasOrdersError(Exception):
     pass
 
 
@@ -49,14 +54,24 @@ def update_product(
 
 def delete_product(db: Session, product_id: int) -> None:
     from app.repositories import cart_repository
+    from app.services import order_service
 
     product = get_product_or_raise(db, product_id)
-    # Si el producto está en algún carrito, esas referencias quedarían
-    # rotas al borrarlo (y Postgres directamente rechaza el delete por
-    # la foreign key). Como el producto deja de existir, no tiene sentido
-    # que siga en ningún carrito.
     cart_repository.delete_by_product(db, product_id)
-    product_repository.delete(db, product)
+
+    # Limpia referencias en pedidos que NO son ventas reales (abandonados,
+    # rechazados, expirados). Los pedidos APPROVED se dejan intactos.
+    order_service.expire_stale_orders(db)
+    order_service.clear_non_approved_references(db, product_id)
+
+    try:
+        product_repository.delete(db, product)
+    except IntegrityError as exc:
+        db.rollback()
+        raise ProductHasOrdersError (
+            f"'{product.name}' tiene ventas confirmadas y no se puede eliminar. "
+            "Marcalo como agotado/inactivo (in_stock=false) en su lugar."
+        ) from exc
 
 
 def set_product_image(db: Session, product_id: int, image_url: str) -> Product:

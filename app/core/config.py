@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ENVIRONMENT: str = "local"
 
-    # Config de futuros JWT (cuando agregues login por API)
+    # Expiración de los tokens JWT en minutos.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # Wompi (pasarela de pagos). En Sandbox estas llaves empiezan con
