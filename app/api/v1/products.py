@@ -1,3 +1,4 @@
+""" endpoints del producto"""
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -34,7 +35,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(get_current_admin_user),
+    is_admin: User = Depends(get_current_admin_user),
 ):
     return product_service.create_product(
         db,
@@ -51,7 +52,7 @@ def update_product(
     product_id: int,
     payload: ProductUpdate,
     db: Session = Depends(get_db),
-    _admin: User = Depends(get_current_admin_user),
+    is_admin: User = Depends(get_current_admin_user),
 ):
     try:
         return product_service.update_product(
@@ -71,7 +72,7 @@ def update_product(
 def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
-    _admin: User = Depends(get_current_admin_user),
+    is_admin: User = Depends(get_current_admin_user),
 ):
     try:
         product_service.delete_product(db, product_id)
@@ -85,7 +86,7 @@ async def upload_image(
     product_id: int,
     file: UploadFile,
     db: Session = Depends(get_db),
-    _admin: User = Depends(get_current_admin_user),
+    is_admin: User = Depends(get_current_admin_user),
 ):
     # Verifica que el producto existe antes de subir la imagen.
     try:
