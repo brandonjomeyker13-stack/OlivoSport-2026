@@ -20,12 +20,7 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"  # creado, esperando que el usuario pague
-    APPROVED = "APPROVED"  # Wompi confirmó el pago
-    DECLINED = "DECLINED"  # Wompi rechazó el pago
-    VOIDED = "VOIDED"  # transacción anulada
-    ERROR = "ERROR"  # error en el procesamiento
+
 
 
 class Order(Base):
