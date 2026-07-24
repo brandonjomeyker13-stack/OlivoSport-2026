@@ -20,7 +20,13 @@ from sqlalchemy.orm import relationship
 from app.db.base import Base
 
 
-
+class OrderStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DECLINED = "DECLINED"
+    VOIDED = "VOIDED"
+    ERROR = "ERROR"
+    EXPIRED = "EXPIRED"  # nadie completó el pago a tiempo (abandonado)
 
 
 class Order(Base):
@@ -67,10 +73,3 @@ class OrderItem(Base):
     order = relationship("Order", back_populates="items")
     product = relationship("Product")
     
-class OrderStatus(str, enum.Enum):
-    PENDING = "PENDING"
-    APPROVED = "APPROVED"
-    DECLINED = "DECLINED"
-    VOIDED = "VOIDED"
-    ERROR = "ERROR"
-    EXPIRED = "EXPIRED"  # nadie completó el pago a tiempo (abandonado)
