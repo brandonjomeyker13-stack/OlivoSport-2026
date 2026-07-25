@@ -15,8 +15,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ENVIRONMENT: str = "local"
 
-    # Expiración de los tokens JWT en minutos.
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    # Expiración del access token (JWT), en minutos. Corto a propósito:
+    # si se roba, la ventana de uso es chica. La sesión larga la maneja
+    # el refresh token de abajo.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+
+    # Refresh token: vive en cookie httpOnly, no en el JWT ni en el body.
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    REFRESH_TOKEN_COOKIE_NAME: str = "refresh_token"
 
     # Wompi (pasarela de pagos). En Sandbox estas llaves empiezan con
     # "pub_test_", "prv_test_", etc. En producción, con "pub_prod_".
