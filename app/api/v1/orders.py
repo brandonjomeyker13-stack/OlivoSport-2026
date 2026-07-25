@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_admin_user, get_current_user
+from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.order import OrderStatus
 from app.models.user import User
@@ -12,8 +13,11 @@ router = APIRouter()
 
 
 @router.post("/checkout", response_model=CheckoutResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
 def checkout(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Congela el carrito en un pedido y devuelve lo que el frontend
     necesita para abrir el Widget de Wompi."""
@@ -52,8 +56,27 @@ def get_my_order(
 @router.get("/admin/all", response_model=list[OrderRead])
 def list_all_orders_admin(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = Query(default=100, le=100),
+    order_status: OrderStatus | None = Query(default=None, alias="status"),
     _admin: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
 ):
-    return order_service.list_all_orders(db, skip=skip, limit=limit)
+    return order_service.list_all_orders(db, skip=skip, limit=limit, status=order_status)
+
+
+@router.patch("/{order_id}/status", response_model=OrderRead)
+def update_order_delivery_status(
+    order_id: int,
+    payload: OrderStatusUpdate,
+    _admin: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Panel de la dueña: marca un pedido como IN_TRANSIT o DELIVERED.
+    Las transiciones inválidas (ej. saltar de PENDING a DELIVERED) las
+    rechaza order_service con 409."""
+    try:
+        return order_service.update_delivery_status(db, order_id, payload.status)
+    except order_service.OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except order_service.InvalidStatusTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

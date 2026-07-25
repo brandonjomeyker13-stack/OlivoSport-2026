@@ -9,12 +9,12 @@ mezcles con este archivo).
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1 import auth
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.v1 import cart, orders, products
+from app.api.v1 import auth, cart, orders, products, webhooks
 from app.core.limiter import limiter
+from app.core.security_headers import SecurityHeadersMiddleware
 
 app = FastAPI(title="OlivoSport API", version="1.0.0")
 
@@ -23,8 +23,16 @@ app = FastAPI(title="OlivoSport API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.add_middleware(SecurityHeadersMiddleware)
+
 # CORS para orígenes locales y dominios Lovable. El regex cubre el subdominio
 # de preview, que cambia por proyecto/sesión.
+# allow_credentials=True es OBLIGATORIO ahora que el refresh token viaja
+# en una cookie httpOnly cross-site (Lovable != dominio del backend); sin
+# esto el navegador ni siquiera la manda. Por eso NO se puede usar "*" en
+# allow_origins/allow_origin_regex — el navegador lo rechaza cuando hay
+# credentials de por medio, así que la lista de orígenes de abajo debe
+# mantenerse explícita.
 origins = [
     "http://localhost:3000",
     "http://localhost:5173",
@@ -46,6 +54,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
 app.include_router(cart.router, prefix="/api/v1/cart", tags=["cart"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
+app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 
 
 @app.get("/")
