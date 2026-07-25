@@ -13,3 +13,4 @@ python-multipart>=0.0.9
 pyjwt>=2.8.0
 supabase>=2.4.0
 slowapi>=0.1.9
+google-auth>=2.29.0

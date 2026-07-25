@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     REFRESH_TOKEN_COOKIE_NAME: str = "refresh_token"
 
+    # Google OAuth: el "Client ID" de tu proyecto en Google Cloud Console
+    # (OAuth consent screen / Credentials). Se usa para verificar que un
+    # id_token realmente fue emitido para TU aplicación.
+    GOOGLE_CLIENT_ID: str | None = None
+
     # Wompi (pasarela de pagos). En Sandbox estas llaves empiezan con
     # "pub_test_", "prv_test_", etc. En producción, con "pub_prod_".
     WOMPI_PUBLIC_KEY: str | None = None

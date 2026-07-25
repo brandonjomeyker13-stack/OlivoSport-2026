@@ -13,6 +13,37 @@ def get_by_email(db: Session, email: str) -> User | None:
     return db.query(User).filter(User.email == email).first()
 
 
+def get_by_google_id(db: Session, google_id: str) -> User | None:
+    return db.query(User).filter(User.google_id == google_id).first()
+
+
+def create_google_user(db: Session, *, name: str, email: str, google_id: str) -> User:
+    from datetime import datetime, timezone
+
+    user = User(
+        name=name,
+        email=email,
+        password_hash=None,
+        google_id=google_id,
+        # Google ya verificó el email (email_verified=true), pero el
+        # consentimiento de Habeas Data lo controla el frontend con una
+        # casilla explícita antes de llamar a este endpoint.
+        accepted_terms=True,
+        accepted_terms_at=datetime.now(timezone.utc),
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def set_google_id(db: Session, user: User, google_id: str) -> User:
+    user.google_id = google_id
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[User]:
     return db.query(User).offset(skip).limit(limit).all()
 

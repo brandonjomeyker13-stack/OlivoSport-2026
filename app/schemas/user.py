@@ -24,6 +24,17 @@ class UserCreate(UserBase):
         return value
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+    # Solo se exige (y se valida en el service) si es un usuario NUEVO.
+    # Para un login de alguien que ya existe, este valor se ignora.
+    accepted_terms: bool = False
+
+
+class GoogleLinkRequest(BaseModel):
+    id_token: str
+
+
 class UserRead(UserBase):
     id: int
     is_active: bool

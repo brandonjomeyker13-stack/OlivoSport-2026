@@ -10,7 +10,14 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
+    # Nullable: un usuario que se registró SOLO con Google no tiene
+    # contraseña propia (no debe poder loguearse con password si no la
+    # tiene, ver user_service.authenticate).
+    password_hash = Column(String(255), nullable=True)
+
+    # sub (subject) del id_token de Google. Único: dos cuentas de Google
+    # distintas nunca pueden apuntar al mismo usuario.
+    google_id = Column(String(255), unique=True, index=True, nullable=True)
 
     # Útil para "desactivar" un usuario sin borrarlo (soft-disable)
     is_active = Column(Boolean, default=True, nullable=False)
