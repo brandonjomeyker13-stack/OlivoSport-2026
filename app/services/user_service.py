@@ -1,10 +1,14 @@
 """Reglas de negocio de User: aquí va todo lo que NO es una simple query."""
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.core.security import hash_password, verify_password
 from app.models.user import User
 from app.repositories import user_repository
+
+logger = logging.getLogger("olivosport.users")
 
 
 class EmailAlreadyRegisteredError(Exception):
@@ -54,7 +58,13 @@ def authenticate(db: Session, *, email: str, password: str) -> User:
 
 
 def authenticate_google(
-    db: Session, *, email: str, google_id: str, name: str, accepted_terms: bool
+    db: Session,
+    *,
+    email: str,
+    google_id: str,
+    name: str,
+    accepted_terms: bool,
+    password: str | None = None,
 ) -> User:
     existing_by_google = user_repository.get_by_google_id(db, google_id)
     if existing_by_google is not None:
@@ -64,15 +74,19 @@ def authenticate_google(
 
     existing_by_email = user_repository.get_by_email(db, email)
     if existing_by_email is not None:
-        # Ya existe una cuenta con este email pero SIN vincular a este
-        # Google ID. No vinculamos automático: si alguien se registró
-        # antes con este email por contraseña (sin verificarlo), un
-        # auto-link silencioso le daría a esa cuenta ya existente acceso
-        # a la identidad de Google de otra persona. Que lo vincule a
-        # propósito, ya logueado con su contraseña.
-        raise GoogleAccountConflictError(
-            "Ya existe una cuenta con este email. Inicia sesión con tu "
-            "contraseña y vincula tu cuenta de Google desde tu perfil."
+        if existing_by_email.google_id is not None and existing_by_email.google_id != google_id:
+            # Caso raro: el email ya está vinculado a OTRA cuenta de
+            # Google distinta. Esto no debería pasar en flujo normal.
+            raise GoogleAccountConflictError(
+                "Este email ya está vinculado a otra cuenta de Google."
+            )
+        logger.info(
+            "Vinculando Google a cuenta existente por email (user_id=%s); "
+            "se invalida su contraseña anterior por seguridad.",
+            existing_by_email.id,
+        )
+        return user_repository.link_google_and_clear_password(
+            db, existing_by_email, google_id
         )
 
     if not accepted_terms:
@@ -81,7 +95,14 @@ def authenticate_google(
             "Tratamiento de Datos para registrarte."
         )
 
-    return user_repository.create_google_user(db, name=name, email=email, google_id=google_id)
+    # Cuenta nueva creada por Google: si el frontend manda una contraseña
+    # (se le pide UNA sola vez, en este primer registro), la guardamos
+    # para que de ahí en adelante también pueda entrar con email+contraseña
+    # sin que se la vuelvan a pedir.
+    password_hash = hash_password(password) if password else None
+    return user_repository.create_google_user(
+        db, name=name, email=email, google_id=google_id, password_hash=password_hash
+    )
 
 
 def link_google_account(db: Session, *, user: User, email: str, google_id: str) -> User:

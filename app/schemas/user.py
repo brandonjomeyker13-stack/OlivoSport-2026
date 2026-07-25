@@ -29,6 +29,11 @@ class GoogleAuthRequest(BaseModel):
     # Solo se exige (y se valida en el service) si es un usuario NUEVO.
     # Para un login de alguien que ya existe, este valor se ignora.
     accepted_terms: bool = False
+    # Opcional: si viene, se guarda como contraseña de respaldo SOLO
+    # cuando se está creando la cuenta por primera vez (se pide una única
+    # vez en el flujo de registro con Google). En logins posteriores o en
+    # cuentas ya existentes, este valor se ignora.
+    password: str | None = Field(default=None, min_length=8)
 
 
 class GoogleLinkRequest(BaseModel):

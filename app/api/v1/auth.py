@@ -84,6 +84,7 @@ def login_with_google(
             google_id=google_id,
             name=name,
             accepted_terms=payload.accepted_terms,
+            password=payload.password,
         )
     except user_service.GoogleAccountConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

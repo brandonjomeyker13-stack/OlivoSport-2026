@@ -17,13 +17,15 @@ def get_by_google_id(db: Session, google_id: str) -> User | None:
     return db.query(User).filter(User.google_id == google_id).first()
 
 
-def create_google_user(db: Session, *, name: str, email: str, google_id: str) -> User:
+def create_google_user(
+    db: Session, *, name: str, email: str, google_id: str, password_hash: str | None = None
+) -> User:
     from datetime import datetime, timezone
 
     user = User(
         name=name,
         email=email,
-        password_hash=None,
+        password_hash=password_hash,
         google_id=google_id,
         # Google ya verificó el email (email_verified=true), pero el
         # consentimiento de Habeas Data lo controla el frontend con una
@@ -39,6 +41,23 @@ def create_google_user(db: Session, *, name: str, email: str, google_id: str) ->
 
 def set_google_id(db: Session, user: User, google_id: str) -> User:
     user.google_id = google_id
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def link_google_and_clear_password(db: Session, user: User, google_id: str) -> User:
+    """Vincula Google a una cuenta que ya existía por contraseña, Y
+    invalida esa contraseña anterior.
+
+    A propósito: el registro por contraseña de este proyecto no verifica
+    el email, así que alguien pudo haber registrado antes una cuenta con
+    el correo de otra persona. Al limpiar password_hash, en el momento
+    en que el dueño real del correo entra con Google, cualquier
+    contraseña que alguien más haya puesto deja de servir.
+    """
+    user.google_id = google_id
+    user.password_hash = None
     db.commit()
     db.refresh(user)
     return user
