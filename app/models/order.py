@@ -30,7 +30,8 @@ class OrderStatus(str, enum.Enum):
 
     # Logística: solo se llega acá DESPUÉS de APPROVED, nunca directo.
     IN_TRANSIT = "IN_TRANSIT"  # la dueña ya salió a entregar el pedido
-    DELIVERED = "DELIVERED"  # el cliente ya lo recibió
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"  # la dueña dice que ya entregó, falta que el cliente confirme
+    DELIVERED = "DELIVERED"  # ambas partes de acuerdo (o se confirmó solo tras 5 días sin respuesta)
 
 
 class Order(Base):
@@ -53,6 +54,15 @@ class Order(Base):
     # Datos de la transacción de Wompi, una vez que responde (útil para
     # soporte/conciliación sin tener que llamar a su API cada vez).
     wompi_transaction_id = Column(String(100), nullable=True)
+
+    # delivered_at: cuándo la dueña marcó "ya lo entregué" (momento real
+    # de la entrega física). Este es el que cuenta para el derecho de
+    # retracto de la Ley 1480 (5 días hábiles desde la entrega).
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    # delivery_confirmed_at: cuándo quedó en DELIVERED — porque el
+    # cliente confirmó, o porque pasaron 5 días sin respuesta y se
+    # autoconfirmó.
+    delivery_confirmed_at = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

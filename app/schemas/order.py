@@ -21,6 +21,8 @@ class OrderRead(BaseModel):
     total_amount: float
     reference: str
     created_at: datetime
+    delivered_at: datetime | None = None
+    delivery_confirmed_at: datetime | None = None
     items: list[OrderItemRead]
 
     model_config = ConfigDict(from_attributes=True)

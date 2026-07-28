@@ -64,6 +64,22 @@ def list_all_orders_admin(
     return order_service.list_all_orders(db, skip=skip, limit=limit, status=order_status)
 
 
+@router.patch("/{order_id}/confirm-delivery", response_model=OrderRead)
+def confirm_order_delivery(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """El CLIENTE confirma que ya recibió su pedido (solo el dueño del
+    pedido puede hacerlo). Si no confirma en 5 días, se autoconfirma solo."""
+    try:
+        return order_service.confirm_delivery(db, order_id, current_user.id)
+    except order_service.OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except order_service.InvalidStatusTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 @router.patch("/{order_id}/status", response_model=OrderRead)
 def update_order_delivery_status(
     order_id: int,

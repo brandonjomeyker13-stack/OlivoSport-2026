@@ -18,13 +18,19 @@ logger = logging.getLogger("olivosport.orders")
 # simplemente ignoramos hasta que llegue el estado final.
 _WOMPI_TERMINAL_STATUSES = {"APPROVED", "DECLINED", "VOIDED", "ERROR"}
 
-# Transiciones de LOGÍSTICA válidas (solo la dueña las dispara, vía panel
-# admin). Nunca se puede saltar de PENDING/APPROVED directo a DELIVERED:
-# siempre pasa por IN_TRANSIT primero.
+# Transiciones de LOGÍSTICA que puede disparar la dueña desde el panel
+# admin. OJO: DELIVERED NO está acá a propósito — a ese estado solo se
+# llega por confirm_delivery() (el cliente) o auto_confirm_stale_deliveries()
+# (a los 5 días sin respuesta), nunca porque el admin lo ponga directo.
 _DELIVERY_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
     OrderStatus.APPROVED: {OrderStatus.IN_TRANSIT},
-    OrderStatus.IN_TRANSIT: {OrderStatus.DELIVERED},
+    OrderStatus.IN_TRANSIT: {OrderStatus.AWAITING_CONFIRMATION},
 }
+
+# Si el cliente no confirma la entrega en este plazo, se autoconfirma —
+# para que un pedido no quede esperando para siempre solo porque el
+# cliente no volvió a entrar a la página.
+DELIVERY_AUTO_CONFIRM_DAYS = 5
 
 # Después de este tiempo sin respuesta de Wompi, asumimos que el usuario
 # abandonó el pago y liberamos el pedido (no bloquea stock ni el producto).
@@ -63,6 +69,31 @@ def expire_stale_orders(db: Session) -> int:
         db.query(Order)
         .filter(Order.status == OrderStatus.PENDING, Order.created_at < cutoff)
         .update({"status": OrderStatus.EXPIRED}, synchronize_session=False)
+    )
+    if updated:
+        db.commit()
+    return updated
+
+
+def auto_confirm_stale_deliveries(db: Session) -> int:
+    """Si pasaron DELIVERY_AUTO_CONFIRM_DAYS días desde que la dueña
+    marcó un pedido como entregado (AWAITING_CONFIRMATION) y el cliente
+    nunca confirmó, se marca DELIVERED de todos modos. Se llama de forma
+    perezosa (igual que expire_stale_orders), no hace falta un cron aparte."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=DELIVERY_AUTO_CONFIRM_DAYS)
+    updated = (
+        db.query(Order)
+        .filter(
+            Order.status == OrderStatus.AWAITING_CONFIRMATION,
+            Order.delivered_at < cutoff,
+        )
+        .update(
+            {
+                "status": OrderStatus.DELIVERED,
+                "delivery_confirmed_at": datetime.now(timezone.utc),
+            },
+            synchronize_session=False,
+        )
     )
     if updated:
         db.commit()
@@ -177,6 +208,7 @@ def get_order_or_raise(db: Session, order_id: int, *, user_id: int | None = None
 
 def list_my_orders(db: Session, user_id: int) -> list[Order]:
     expire_stale_orders(db)
+    auto_confirm_stale_deliveries(db)
     return (
         db.query(Order)
         .filter(Order.user_id == user_id)
@@ -192,6 +224,7 @@ def list_all_orders(
     status: OrderStatus | None = None,
 ) -> list[Order]:
     expire_stale_orders(db)
+    auto_confirm_stale_deliveries(db)
     query = db.query(Order)
     if status is not None:
         query = query.filter(Order.status == status)
@@ -200,7 +233,9 @@ def list_all_orders(
 
 def update_delivery_status(db: Session, order_id: int, new_status: OrderStatus) -> Order:
     """Usado por la dueña desde el panel admin para marcar
-    APPROVED -> IN_TRANSIT -> DELIVERED. Nunca permite saltos."""
+    APPROVED -> IN_TRANSIT -> AWAITING_CONFIRMATION. Nunca permite saltos,
+    y nunca permite poner DELIVERED directo (eso lo confirma el cliente,
+    o se autoconfirma a los 5 días)."""
     order = get_order_or_raise(db, order_id)
     allowed = _DELIVERY_TRANSITIONS.get(order.status, set())
     if new_status not in allowed:
@@ -208,6 +243,23 @@ def update_delivery_status(db: Session, order_id: int, new_status: OrderStatus) 
             f"No se puede pasar de {order.status.value} a {new_status.value}."
         )
     order.status = new_status
+    if new_status == OrderStatus.AWAITING_CONFIRMATION:
+        order.delivered_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+def confirm_delivery(db: Session, order_id: int, user_id: int) -> Order:
+    """El CLIENTE confirma que ya recibió su pedido. Solo el dueño del
+    pedido puede hacerlo, y solo si está en AWAITING_CONFIRMATION."""
+    order = get_order_or_raise(db, order_id, user_id=user_id)
+    if order.status != OrderStatus.AWAITING_CONFIRMATION:
+        raise InvalidStatusTransitionError(
+            "Este pedido no está esperando tu confirmación de entrega."
+        )
+    order.status = OrderStatus.DELIVERED
+    order.delivery_confirmed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(order)
     return order
