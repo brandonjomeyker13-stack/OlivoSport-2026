@@ -170,6 +170,7 @@ def get_my_profile(current_user: User = Depends(get_current_user)):
 class UserUpdate(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=100)
     email: EmailStr | None = None
+    address: str | None = Field(None, min_length=5, max_length=255)
 
 
 @router.patch("/me", response_model=UserRead)
@@ -181,7 +182,8 @@ def update_my_profile(
     """Derecho de rectificación: el usuario puede corregir sus datos."""
     try:
         return user_service.update_profile(
-            db, user=current_user, name=payload.name, email=payload.email
+            db, user=current_user, name=payload.name, email=payload.email,
+            address=payload.address,
         )
     except user_service.EmailAlreadyRegisteredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

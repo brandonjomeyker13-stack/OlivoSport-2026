@@ -10,6 +10,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=False)
+
+    # Opcional: se le pide al usuario después de loguearse si todavía no
+    # la tiene (el frontend decide cuándo mostrar el formulario).
+    address = Column(String(255), nullable=True)
     # Nullable: un usuario que se registró SOLO con Google no tiene
     # contraseña propia (no debe poder loguearse con password si no la
     # tiene, ver user_service.authenticate).

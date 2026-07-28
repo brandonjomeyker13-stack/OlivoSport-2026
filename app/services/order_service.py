@@ -83,15 +83,36 @@ def _sign(reference: str, amount_in_cents: int, currency: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _cart_matches_order(order: Order, cart_items: list) -> bool:
+    order_map = {item.product_id: item.quantity for item in order.items}
+    cart_map = {item.product_id: item.quantity for item in cart_items}
+    return order_map == cart_map
+
+
 def create_order_from_cart(db: Session, *, user_id: int) -> Order:
     """Congela el carrito actual del usuario en un pedido nuevo, en estado
     PENDING. Valida stock, pero NO lo descuenta todavía (eso se hace recién
-    cuando Wompi confirma el pago, vía webhook)."""
+    cuando Wompi confirma el pago, vía webhook).
+
+    Idempotente: si el usuario ya tiene un pedido PENDING con exactamente
+    el mismo contenido (mismo producto/cantidad), se reusa ese en vez de
+    crear uno nuevo — evita duplicados por doble clic o por un reintento
+    de red del botón de pagar.
+    """
     expire_stale_orders(db)
 
     cart_items = cart_repository.list_by_user(db, user_id)
     if not cart_items:
         raise EmptyCartError("El carrito está vacío.")
+
+    existing_pending = (
+        db.query(Order)
+        .filter(Order.user_id == user_id, Order.status == OrderStatus.PENDING)
+        .order_by(Order.created_at.desc())
+        .first()
+    )
+    if existing_pending is not None and _cart_matches_order(existing_pending, cart_items):
+        return existing_pending
 
     order_items = []
     total = 0

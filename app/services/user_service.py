@@ -118,13 +118,17 @@ def link_google_account(db: Session, *, user: User, email: str, google_id: str) 
     return user_repository.set_google_id(db, user, google_id)
 
 
-def update_profile(db: Session, *, user: User, name: str | None, email: str | None) -> User:
+def update_profile(
+    db: Session, *, user: User, name: str | None, email: str | None, address: str | None = None
+) -> User:
     if email is not None and email != user.email:
         if user_repository.get_by_email(db, email) is not None:
             raise EmailAlreadyRegisteredError(f"El email {email} ya está registrado.")
         user.email = email
     if name is not None:
         user.name = name
+    if address is not None:
+        user.address = address
     db.commit()
     db.refresh(user)
     return user
