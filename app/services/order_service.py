@@ -189,6 +189,13 @@ def build_checkout_payload(order: Order) -> dict:
     currency = settings.WOMPI_CURRENCY
     signature = _sign(order.reference, amount_in_cents, currency)
 
+    # TEMPORAL — para comparar contra lo que el widget realmente le manda
+    # a Wompi (ver Network tab del navegador). Quitar una vez resuelto.
+    logger.info(
+        "DEBUG checkout order_id=%s reference=%r amount_in_cents=%r currency=%r signature=%s",
+        order.id, order.reference, amount_in_cents, currency, signature,
+    )
+
     return {
         "order_id": order.id,
         "public_key": settings.WOMPI_PUBLIC_KEY,
