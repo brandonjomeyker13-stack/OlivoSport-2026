@@ -40,9 +40,19 @@ class GoogleLinkRequest(BaseModel):
     id_token: str
 
 
+class SetPasswordRequest(BaseModel):
+    # Solo se exige (y se valida en el service) si el usuario YA tiene
+    # una contraseña — para cambiarla hay que probar que sabes la actual.
+    # Si el usuario todavía no tiene ninguna (cuenta creada solo con
+    # Google), este campo se ignora.
+    current_password: str | None = None
+    new_password: str = Field(..., min_length=8)
+
+
 class UserRead(UserBase):
     id: int
     address: str | None = None
+    city: str | None = None
     is_active: bool
     is_admin: bool
     accepted_terms: bool

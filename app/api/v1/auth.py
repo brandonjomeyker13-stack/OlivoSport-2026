@@ -10,7 +10,13 @@ from app.core.google_oauth import InvalidGoogleTokenError, verify_google_id_toke
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import GoogleAuthRequest, GoogleLinkRequest, UserCreate, UserRead
+from app.schemas.user import (
+    GoogleAuthRequest,
+    GoogleLinkRequest,
+    SetPasswordRequest,
+    UserCreate,
+    UserRead,
+)
 from app.services import auth_service, user_service
 
 router = APIRouter()
@@ -158,6 +164,28 @@ def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     response.delete_cookie(key=settings.REFRESH_TOKEN_COOKIE_NAME, path="/api/v1/auth")
 
 
+@router.post("/set-password", response_model=UserRead)
+def set_password(
+    payload: SetPasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cubre dos casos, autenticado con el access_token normal:
+    - El usuario no tiene contraseña (se creó solo con Google): la pone
+      por primera vez, mandando solo new_password.
+    - El usuario ya tiene contraseña y quiere cambiarla: debe mandar
+      también current_password para confirmar que es él."""
+    try:
+        return user_service.set_password(
+            db,
+            user=current_user,
+            current_password=payload.current_password,
+            new_password=payload.new_password,
+        )
+    except user_service.InvalidCredentialsError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+
+
 # Endpoints de datos personales: acceso, rectificación y supresión.
 
 
@@ -171,6 +199,7 @@ class UserUpdate(BaseModel):
     name: str | None = Field(None, min_length=2, max_length=100)
     email: EmailStr | None = None
     address: str | None = Field(None, min_length=5, max_length=255)
+    city: str | None = Field(None, min_length=2, max_length=100)
 
 
 @router.patch("/me", response_model=UserRead)
@@ -183,7 +212,7 @@ def update_my_profile(
     try:
         return user_service.update_profile(
             db, user=current_user, name=payload.name, email=payload.email,
-            address=payload.address,
+            address=payload.address, city=payload.city,
         )
     except user_service.EmailAlreadyRegisteredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

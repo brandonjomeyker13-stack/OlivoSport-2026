@@ -64,6 +64,22 @@ def list_all_orders_admin(
     return order_service.list_all_orders(db, skip=skip, limit=limit, status=order_status)
 
 
+@router.patch("/{order_id}/cancel", response_model=OrderRead)
+def cancel_my_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """El cliente cancela su propio pedido mientras siga PENDING (antes de
+    pagar). Libera el stock que se había reservado al crearlo."""
+    try:
+        return order_service.cancel_order(db, order_id, current_user.id)
+    except order_service.OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except order_service.InvalidStatusTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
 @router.patch("/{order_id}/confirm-delivery", response_model=OrderRead)
 def confirm_order_delivery(
     order_id: int,

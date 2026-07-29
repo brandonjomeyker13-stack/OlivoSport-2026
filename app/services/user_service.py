@@ -119,7 +119,13 @@ def link_google_account(db: Session, *, user: User, email: str, google_id: str) 
 
 
 def update_profile(
-    db: Session, *, user: User, name: str | None, email: str | None, address: str | None = None
+    db: Session,
+    *,
+    user: User,
+    name: str | None,
+    email: str | None,
+    address: str | None = None,
+    city: str | None = None,
 ) -> User:
     if email is not None and email != user.email:
         if user_repository.get_by_email(db, email) is not None:
@@ -129,6 +135,25 @@ def update_profile(
         user.name = name
     if address is not None:
         user.address = address
+    if city is not None:
+        user.city = city
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def set_password(db: Session, *, user: User, current_password: str | None, new_password: str) -> User:
+    """Cubre dos casos:
+    - Usuario sin contraseña (creado solo con Google): la pone por
+      primera vez, sin pedir nada más (ya está autenticado).
+    - Usuario con contraseña: para cambiarla debe probar que sabe la
+      actual — si no, cualquiera con el access_token robado podría
+      cambiarla sin saber la original.
+    """
+    if user.password_hash is not None:
+        if not current_password or not verify_password(current_password, user.password_hash):
+            raise InvalidCredentialsError("La contraseña actual no es correcta.")
+    user.password_hash = hash_password(new_password)
     db.commit()
     db.refresh(user)
     return user

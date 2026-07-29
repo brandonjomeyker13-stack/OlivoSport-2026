@@ -27,6 +27,7 @@ class OrderStatus(str, enum.Enum):
     VOIDED = "VOIDED"
     ERROR = "ERROR"
     EXPIRED = "EXPIRED"  # nadie completó el pago a tiempo (abandonado)
+    CANCELLED = "CANCELLED"  # el cliente lo canceló él mismo, antes de pagar
 
     # Logística: solo se llega acá DESPUÉS de APPROVED, nunca directo.
     IN_TRANSIT = "IN_TRANSIT"  # la dueña ya salió a entregar el pedido

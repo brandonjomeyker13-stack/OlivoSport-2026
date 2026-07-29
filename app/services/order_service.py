@@ -58,21 +58,28 @@ class WompiNotConfiguredError(Exception):
 
 
 def expire_stale_orders(db: Session) -> int:
-    """Marca como EXPIRED los pedidos PENDING más viejos que el TTL.
+    """Marca como EXPIRED los pedidos PENDING más viejos que el TTL, y
+    libera el stock que tenían reservado (ver create_order_from_cart).
 
     Se llama de forma "perezosa" (al listar o crear pedidos) en vez de
     necesitar un cron aparte: para el volumen de una tienda chica/mediana
     alcanza y sobra, y es una línea menos de infraestructura que mantener.
     """
     cutoff = datetime.now(timezone.utc) - timedelta(hours=PENDING_ORDER_TTL_HOURS)
-    updated = (
+    stale_orders = (
         db.query(Order)
         .filter(Order.status == OrderStatus.PENDING, Order.created_at < cutoff)
-        .update({"status": OrderStatus.EXPIRED}, synchronize_session=False)
+        .all()
     )
-    if updated:
+    for order in stale_orders:
+        for item in order.items:
+            product = product_repository.get_by_id_for_update(db, item.product_id)
+            if product is not None:
+                product_repository.apply_stock_delta(db, product, item.quantity)
+        order.status = OrderStatus.EXPIRED
+    if stale_orders:
         db.commit()
-    return updated
+    return len(stale_orders)
 
 
 def auto_confirm_stale_deliveries(db: Session) -> int:
@@ -122,8 +129,14 @@ def _cart_matches_order(order: Order, cart_items: list) -> bool:
 
 def create_order_from_cart(db: Session, *, user_id: int) -> Order:
     """Congela el carrito actual del usuario en un pedido nuevo, en estado
-    PENDING. Valida stock, pero NO lo descuenta todavía (eso se hace recién
-    cuando Wompi confirma el pago, vía webhook).
+    PENDING, y RESERVA el stock ahí mismo (bloqueando cada fila de
+    producto con SELECT ... FOR UPDATE). Así, si dos personas quieren lo
+    último que queda al mismo tiempo, la segunda se entera de una vez que
+    no hay stock — nunca llega a pagar por algo que ya no existe.
+
+    Esa reserva se libera sola si el pedido se cancela, expira, o Wompi
+    reporta el pago como rechazado/con error (ver cancel_order,
+    expire_stale_orders y process_wompi_transaction).
 
     Idempotente: si el usuario ya tiene un pedido PENDING con exactamente
     el mismo contenido (mismo producto/cantidad), se reusa ese en vez de
@@ -145,24 +158,32 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
     if existing_pending is not None and _cart_matches_order(existing_pending, cart_items):
         return existing_pending
 
-    order_items = []
-    total = 0
+    # Primera pasada: bloquear y VALIDAR todo antes de tocar nada. Si
+    # algo no alcanza, no queda ninguna reserva a medias.
+    locked_products = []
     for item in cart_items:
-        product = product_repository.get_by_id(db, item.product_id)
+        product = product_repository.get_by_id_for_update(db, item.product_id)
         if product is None or item.quantity > product.stock:
             name = product.name if product else f"#{item.product_id}"
             raise InsufficientStockError(
                 f"No hay stock suficiente de '{name}' para completar el pedido."
             )
+        locked_products.append((product, item.quantity))
+
+    # Segunda pasada: ya validado todo, recién ahora se reserva de verdad.
+    order_items = []
+    total = 0
+    for product, quantity in locked_products:
         order_items.append(
             OrderItem(
                 product_id=product.id,
                 product_name=product.name,
                 unit_price=product.price,
-                quantity=item.quantity,
+                quantity=quantity,
             )
         )
-        total += float(product.price) * item.quantity
+        total += float(product.price) * quantity
+        product_repository.apply_stock_delta(db, product, -quantity)
 
     order = Order(
         user_id=user_id,
@@ -189,15 +210,6 @@ def build_checkout_payload(order: Order) -> dict:
     currency = settings.WOMPI_CURRENCY
     signature = _sign(order.reference, amount_in_cents, currency)
 
-    # TEMPORAL — para comparar contra lo que el widget realmente le manda
-    # a Wompi (ver Network tab del navegador). Quitar una vez resuelto.
-    # (nivel WARNING a propósito: por ahora nada configura logging.basicConfig,
-    # así que INFO no se ve en la consola de Render — esto sí sale seguro)
-    logger.warning(
-        "DEBUG checkout order_id=%s reference=%r amount_in_cents=%r currency=%r signature=%s",
-        order.id, order.reference, amount_in_cents, currency, signature,
-    )
-
     return {
         "order_id": order.id,
         "public_key": settings.WOMPI_PUBLIC_KEY,
@@ -212,6 +224,47 @@ def get_order_or_raise(db: Session, order_id: int, *, user_id: int | None = None
     order = db.query(Order).filter(Order.id == order_id).first()
     if order is None or (user_id is not None and order.user_id != user_id):
         raise OrderNotFoundError(f"Pedido {order_id} no encontrado.")
+    return order
+
+
+def _get_order_for_update(db: Session, order_id: int, *, user_id: int | None = None) -> Order:
+    """Igual que get_order_or_raise, pero bloqueando la fila del pedido
+    (SELECT ... FOR UPDATE). Se usa cuando dos cosas podrían intentar
+    cambiar el estado del mismo pedido casi al mismo tiempo (ej. el
+    cliente cancelando justo cuando el webhook de Wompi lo está
+    aprobando) — así solo una de las dos gana, nunca las dos a medias."""
+    order = db.query(Order).filter(Order.id == order_id).with_for_update().first()
+    if order is None or (user_id is not None and order.user_id != user_id):
+        raise OrderNotFoundError(f"Pedido {order_id} no encontrado.")
+    return order
+
+
+def cancel_order(db: Session, order_id: int, user_id: int) -> Order:
+    """El CLIENTE cancela su propio pedido, mientras siga PENDING (antes
+    de pagar) — libera el stock que se había reservado al crearlo.
+
+    No se puede cancelar:
+    - un pedido de otra persona (se valida el dueño)
+    - un pedido que ya no está PENDING (ya se pagó, se rechazó, expiró,
+      o ya se había cancelado — cancelar dos veces no debe devolver
+      stock dos veces)
+    """
+    order = _get_order_for_update(db, order_id, user_id=user_id)
+
+    if order.status != OrderStatus.PENDING:
+        raise InvalidStatusTransitionError(
+            "Este pedido ya no se puede cancelar (ya fue pagado, rechazado, "
+            "expiró, o ya estaba cancelado)."
+        )
+
+    for item in order.items:
+        product = product_repository.get_by_id_for_update(db, item.product_id)
+        if product is not None:
+            product_repository.apply_stock_delta(db, product, item.quantity)
+
+    order.status = OrderStatus.CANCELLED
+    db.commit()
+    db.refresh(order)
     return order
 
 
@@ -288,7 +341,7 @@ def process_wompi_transaction(
     descontar stock ni a pisar un estado de logística ya avanzado.
     Devuelve None si no existe ningún pedido con esa referencia.
     """
-    order = db.query(Order).filter(Order.reference == reference).first()
+    order = db.query(Order).filter(Order.reference == reference).with_for_update().first()
     if order is None:
         return None
 
@@ -300,9 +353,14 @@ def process_wompi_transaction(
     new_status = OrderStatus(wompi_status)
 
     if order.status != OrderStatus.PENDING:
-        # El pedido ya salió de PENDING (mismo evento reprocesado, o ya
-        # avanzó en logística). No lo tocamos: evita reprocesar un pago
-        # ya contabilizado o pisar un estado de entrega más avanzado.
+        # El pedido ya salió de PENDING (mismo evento reprocesado, ya
+        # avanzó en logística, o el cliente lo canceló y esto llegó
+        # tarde). No lo tocamos: evita reprocesar un pago ya contabilizado
+        # o pisar un estado más avanzado. Como el bloqueo de fila de
+        # arriba (with_for_update) espera a que termine cualquier otra
+        # transacción que esté tocando este mismo pedido (ej. una
+        # cancelación en curso), este chequeo ya ve el estado más
+        # reciente posible.
         if order.wompi_transaction_id != wompi_transaction_id:
             logger.warning(
                 "Evento de Wompi para pedido %s (status=%s) llegó cuando "
@@ -312,35 +370,24 @@ def process_wompi_transaction(
         return order
 
     if new_status == OrderStatus.APPROVED:
-        # Recién ACÁ se descuenta stock real, dentro de la misma
-        # transacción que confirma el pedido, bloqueando cada producto
-        # (SELECT ... FOR UPDATE) para que dos pagos simultáneos no lean
-        # el mismo stock viejo.
+        # El stock de este pedido YA se reservó al crearlo (PENDING, ver
+        # create_order_from_cart) — acá NO se vuelve a descontar. Solo
+        # queda limpiar el carrito, ya que esos productos ya no tienen
+        # sentido seguir apareciendo ahí como "por comprar".
+        product_ids = [item.product_id for item in order.items]
+        cart_repository.delete_for_user_and_products(db, order.user_id, product_ids)
+    else:
+        # DECLINED / VOIDED / ERROR: el pago no se completó, así que se
+        # libera la reserva de stock que se había hecho al crear el pedido.
         for item in order.items:
             product = product_repository.get_by_id_for_update(db, item.product_id)
             if product is None:
                 logger.error(
-                    "Pedido %s: producto %s ya no existe al confirmar el pago.",
+                    "Pedido %s: producto %s ya no existe al liberar su reserva.",
                     order.id, item.product_id,
                 )
                 continue
-            if product.stock < item.quantity:
-                # El dinero YA fue cobrado por Wompi — no se puede
-                # "des-cobrar" desde acá. Se deja en 0 y queda para
-                # revisión manual (backorder) en vez de fallar el
-                # webhook y perder la confirmación del pago.
-                logger.error(
-                    "SOBREVENTA en pedido %s: producto %s tenía stock %s, "
-                    "se necesitaban %s. Revisar manualmente.",
-                    order.id, product.id, product.stock, item.quantity,
-                )
-            product_repository.apply_stock_delta(db, product, -item.quantity)
-
-        # Ya se confirmó el pago: esos productos ya no tienen sentido
-        # seguir apareciendo en el carrito del cliente (queda incómodo
-        # ver algo que ya compró como si todavía estuviera "por comprar").
-        product_ids = [item.product_id for item in order.items]
-        cart_repository.delete_for_user_and_products(db, order.user_id, product_ids)
+            product_repository.apply_stock_delta(db, product, item.quantity)
 
     order.status = new_status
     order.wompi_transaction_id = wompi_transaction_id
