@@ -18,7 +18,13 @@ def get_by_google_id(db: Session, google_id: str) -> User | None:
 
 
 def create_google_user(
-    db: Session, *, name: str, email: str, google_id: str, password_hash: str | None = None
+    db: Session,
+    *,
+    name: str,
+    email: str,
+    google_id: str,
+    password_hash: str | None = None,
+    accepted_terms: bool,
 ) -> User:
     from datetime import datetime, timezone
 
@@ -27,11 +33,8 @@ def create_google_user(
         email=email,
         password_hash=password_hash,
         google_id=google_id,
-        # Google ya verificó el email (email_verified=true), pero el
-        # consentimiento de Habeas Data lo controla el frontend con una
-        # casilla explícita antes de llamar a este endpoint.
-        accepted_terms=True,
-        accepted_terms_at=datetime.now(timezone.utc),
+        accepted_terms=accepted_terms,
+        accepted_terms_at=datetime.now(timezone.utc) if accepted_terms else None,
     )
     db.add(user)
     db.commit()

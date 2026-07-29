@@ -38,17 +38,18 @@ def apply_stock_delta(db: Session, product: Product, delta: int) -> Product:
     return product
 
 
-def list_all(db: Session, skip: int = 0, limit: int = 100) -> list[Product]:
-    return (
-        db.query(Product)
-        .order_by(Product.id)
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+def list_all(
+    db: Session, skip: int = 0, limit: int = 100, category_id: int | None = None
+) -> list[Product]:
+    query = db.query(Product)
+    if category_id is not None:
+        query = query.filter(Product.category_id == category_id)
+    return query.order_by(Product.id).offset(skip).limit(limit).all()
 
 
-def create(db: Session, *, name: str, color: str, size: str, price, stock: int) -> Product:
+def create(
+    db: Session, *, name: str, color: str, size: str, price, stock: int, category_id: int
+) -> Product:
     product = Product(
         name=name,
         color=color,
@@ -56,6 +57,7 @@ def create(db: Session, *, name: str, color: str, size: str, price, stock: int) 
         price=price,
         stock=stock,
         in_stock=stock > 0,
+        category_id=category_id,
     )
     db.add(product)
     db.commit()

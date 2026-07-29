@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api.v1 import auth, cart, orders, products, webhooks
+from app.api.v1 import auth, cart, categories, orders, products, webhooks
 from app.core.limiter import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 
@@ -79,6 +79,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(products.router, prefix="/api/v1/products", tags=["products"])
+app.include_router(categories.router, prefix="/api/v1/categories", tags=["categories"])
 app.include_router(cart.router, prefix="/api/v1/cart", tags=["cart"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])

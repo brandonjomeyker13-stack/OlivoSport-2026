@@ -101,7 +101,12 @@ def authenticate_google(
     # sin que se la vuelvan a pedir.
     password_hash = hash_password(password) if password else None
     return user_repository.create_google_user(
-        db, name=name, email=email, google_id=google_id, password_hash=password_hash
+        db,
+        name=name,
+        email=email,
+        google_id=google_id,
+        password_hash=password_hash,
+        accepted_terms=accepted_terms,
     )
 
 

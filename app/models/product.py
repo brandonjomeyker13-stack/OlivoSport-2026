@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, Numeric, String, func
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, Numeric, String, func
 from sqlalchemy.orm import relationship
 
 from app.db.base import Base
@@ -14,6 +14,11 @@ class Product(Base):
     price = Column(Numeric(10, 2), nullable=False)
     stock = Column(Integer, nullable=False, default=0)
     in_stock = Column(Boolean, default=True, nullable=False)
+
+    # Obligatoria: todo producto debe pertenecer a una categoría (la crea
+    # el admin desde /categories) — no se puede crear un producto sin una.
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=False, index=True)
+    category = relationship("Category", back_populates="products")
 
     # URL pública del archivo en Supabase Storage (bucket "product-images").
     # El archivo en sí NO vive en esta base de datos, solo el link.

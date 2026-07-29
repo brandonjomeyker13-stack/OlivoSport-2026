@@ -16,11 +16,12 @@ router = APIRouter()
 def list_products(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
+    category_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     from app.repositories import product_repository
 
-    return product_repository.list_all(db, skip=skip, limit=limit)
+    return product_repository.list_all(db, skip=skip, limit=limit, category_id=category_id)
 
 
 @router.get("/{product_id}", response_model=ProductRead)
@@ -37,14 +38,18 @@ def create_product(
     db: Session = Depends(get_db),
     is_admin: User = Depends(get_current_admin_user),
 ):
-    return product_service.create_product(
-        db,
-        name=payload.name,
-        color=payload.color,
-        size=payload.size,
-        price=payload.price,
-        stock=payload.stock,
-    )
+    try:
+        return product_service.create_product(
+            db,
+            name=payload.name,
+            color=payload.color,
+            size=payload.size,
+            price=payload.price,
+            stock=payload.stock,
+            category_id=payload.category_id,
+        )
+    except product_service.CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.put("/{product_id}", response_model=ProductRead)
@@ -63,9 +68,12 @@ def update_product(
             size=payload.size,
             price=payload.price,
             stock=payload.stock,
+            category_id=payload.category_id,
         )
     except product_service.ProductNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except product_service.CategoryNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)

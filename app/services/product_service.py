@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
-from app.repositories import product_repository
+from app.repositories import category_repository, product_repository
 
 
 class ProductNotFoundError(Exception):
@@ -21,11 +21,17 @@ class ProductHasOrdersError(Exception):
     pass
 
 
+class CategoryNotFoundError(Exception):
+    pass
+
+
 def create_product(
-    db: Session, *, name: str, color: str, size: str, price: Decimal, stock: int
+    db: Session, *, name: str, color: str, size: str, price: Decimal, stock: int, category_id: int
 ) -> Product:
+    if category_repository.get_by_id(db, category_id) is None:
+        raise CategoryNotFoundError(f"Categoría {category_id} no encontrada.")
     return product_repository.create(
-        db, name=name, color=color, size=size, price=price, stock=stock
+        db, name=name, color=color, size=size, price=price, stock=stock, category_id=category_id
     )
 
 
@@ -45,10 +51,20 @@ def update_product(
     size: str | None = None,
     price: Decimal | None = None,
     stock: int | None = None,
+    category_id: int | None = None,
 ) -> Product:
     product = get_product_or_raise(db, product_id)
+    if category_id is not None and category_repository.get_by_id(db, category_id) is None:
+        raise CategoryNotFoundError(f"Categoría {category_id} no encontrada.")
     return product_repository.update(
-        db, product, name=name, color=color, size=size, price=price, stock=stock
+        db,
+        product,
+        name=name,
+        color=color,
+        size=size,
+        price=price,
+        stock=stock,
+        category_id=category_id,
     )
 
 
