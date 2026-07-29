@@ -268,15 +268,82 @@ def cancel_order(db: Session, order_id: int, user_id: int) -> Order:
     return order
 
 
-def list_my_orders(db: Session, user_id: int) -> list[Order]:
+# Estados desde los que un pedido existente todavía se puede pagar.
+_RETRYABLE_STATUSES = {OrderStatus.PENDING, OrderStatus.DECLINED, OrderStatus.ERROR}
+
+
+def get_checkout_payload_for_order(db: Session, order_id: int, user_id: int) -> dict:
+    """Para el botón "Pagar" en un pedido YA creado (no pasa por el
+    carrito). Genera una referencia NUEVA cada vez — Wompi no deja
+    reusar una referencia ya usada, ni siquiera de un intento fallido.
+
+    - PENDING: el stock ya está reservado, solo se arma un nuevo intento
+      de pago con referencia nueva.
+    - DECLINED/ERROR: el pago anterior falló, y en ese momento ya se
+      había liberado el stock (ver process_wompi_transaction). Acá se
+      vuelve a reservar (con bloqueo de fila) antes de dejarlo pagar de
+      nuevo. Si ya no alcanza, se avisa en vez de dejarlo pagar por algo
+      que no existe.
+    - Cualquier otro estado (EXPIRED, CANCELLED, APPROVED en adelante):
+      no se puede "revivir" — hay que armar un pedido nuevo desde el carrito.
+    """
+    order = _get_order_for_update(db, order_id, user_id=user_id)
+
+    if order.status not in _RETRYABLE_STATUSES:
+        raise InvalidStatusTransitionError(
+            "Este pedido ya no se puede pagar. Si todavía quieres estos "
+            "productos, arma un pedido nuevo desde el carrito."
+        )
+
+    if order.status in (OrderStatus.DECLINED, OrderStatus.ERROR):
+        locked_products = []
+        for item in order.items:
+            product = product_repository.get_by_id_for_update(db, item.product_id)
+            if product is None or item.quantity > product.stock:
+                name = product.name if product else f"#{item.product_id}"
+                raise InsufficientStockError(
+                    f"Ya no hay stock suficiente de '{name}' para reintentar este pedido."
+                )
+            locked_products.append((product, item.quantity))
+        for product, quantity in locked_products:
+            product_repository.apply_stock_delta(db, product, -quantity)
+        order.status = OrderStatus.PENDING
+
+    order.reference = _generate_reference(order.id)
+    db.commit()
+    db.refresh(order)
+
+    return build_checkout_payload(order)
+    return order
+
+
+# Agrupación semántica para separar "en curso" de "finalizados" en el
+# historial del cliente (GET /orders/?stage=active|completed).
+ACTIVE_ORDER_STATUSES = {
+    OrderStatus.PENDING,
+    OrderStatus.APPROVED,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.AWAITING_CONFIRMATION,
+}
+COMPLETED_ORDER_STATUSES = {
+    OrderStatus.DELIVERED,
+    OrderStatus.CANCELLED,
+    OrderStatus.EXPIRED,
+    OrderStatus.DECLINED,
+    OrderStatus.VOIDED,
+    OrderStatus.ERROR,
+}
+
+
+def list_my_orders(db: Session, user_id: int, stage: str | None = None) -> list[Order]:
     expire_stale_orders(db)
     auto_confirm_stale_deliveries(db)
-    return (
-        db.query(Order)
-        .filter(Order.user_id == user_id)
-        .order_by(Order.created_at.desc())
-        .all()
-    )
+    query = db.query(Order).filter(Order.user_id == user_id)
+    if stage == "active":
+        query = query.filter(Order.status.in_(ACTIVE_ORDER_STATUSES))
+    elif stage == "completed":
+        query = query.filter(Order.status.in_(COMPLETED_ORDER_STATUSES))
+    return query.order_by(Order.created_at.desc()).all()
 
 
 def list_all_orders(

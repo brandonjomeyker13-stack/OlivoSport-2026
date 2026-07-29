@@ -34,11 +34,42 @@ def checkout(
         ) from exc
 
 
+@router.post("/{order_id}/pay", response_model=CheckoutResponse)
+@limiter.limit("5/minute")
+def pay_existing_order(
+    request: Request,
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Botón "Pagar" en un pedido ya creado (PENDING, o reintentar uno
+    DECLINED/ERROR). Devuelve lo que el frontend necesita para abrir el
+    Widget de Wompi, con una referencia nueva (Wompi no deja reusar la
+    de un intento anterior)."""
+    try:
+        return order_service.get_checkout_payload_for_order(db, order_id, current_user.id)
+    except order_service.OrderNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except order_service.InvalidStatusTransitionError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except order_service.InsufficientStockError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except order_service.WompiNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)
+        ) from exc
+
+
 @router.get("/", response_model=list[OrderRead])
 def list_my_orders(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    stage: str | None = Query(default=None, pattern="^(active|completed)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    return order_service.list_my_orders(db, current_user.id)
+    """?stage=active -> PENDING/APPROVED/IN_TRANSIT/AWAITING_CONFIRMATION
+    ?stage=completed -> DELIVERED/CANCELLED/EXPIRED/DECLINED/VOIDED/ERROR
+    Sin `stage`, devuelve todos (como antes)."""
+    return order_service.list_my_orders(db, current_user.id, stage=stage)
 
 
 @router.get("/{order_id}", response_model=OrderRead)
