@@ -56,7 +56,7 @@ def get_my_order(
 @router.get("/admin/all", response_model=list[OrderRead])
 def list_all_orders_admin(
     skip: int = 0,
-    limit: int = Query(default=100, le=100),
+    limit: int = Query(default=100, le=300),
     order_status: OrderStatus | None = Query(default=None, alias="status"),
     _admin: User = Depends(get_current_admin_user),
     db: Session = Depends(get_db),
