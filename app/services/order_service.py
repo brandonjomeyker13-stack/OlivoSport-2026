@@ -191,7 +191,9 @@ def build_checkout_payload(order: Order) -> dict:
 
     # TEMPORAL — para comparar contra lo que el widget realmente le manda
     # a Wompi (ver Network tab del navegador). Quitar una vez resuelto.
-    logger.info(
+    # (nivel WARNING a propósito: por ahora nada configura logging.basicConfig,
+    # así que INFO no se ve en la consola de Render — esto sí sale seguro)
+    logger.warning(
         "DEBUG checkout order_id=%s reference=%r amount_in_cents=%r currency=%r signature=%s",
         order.id, order.reference, amount_in_cents, currency, signature,
     )
