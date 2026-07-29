@@ -41,7 +41,20 @@ def update_quantity(db: Session, item: CartItem, quantity: int) -> CartItem:
 def delete(db: Session, item: CartItem) -> None:
     db.delete(item)
     db.commit()
-    
+
+
+def delete_for_user_and_products(db: Session, user_id: int, product_ids: list[int]) -> None:
+    """Borra, SIN comitear, los ítems de carrito de este usuario que
+    coincidan con estos productos. Pensado para usarse dentro de una
+    transacción más grande (ej. al confirmar un pago), donde el commit
+    final lo hace quien orquesta todo — así no se libera nada a medias."""
+    if not product_ids:
+        return
+    db.query(CartItem).filter(
+        CartItem.user_id == user_id, CartItem.product_id.in_(product_ids)
+    ).delete(synchronize_session=False)
+
+
 def delete_by_product(db: Session, product_id: int) -> None:
     """Borra todos los ítems de carrito (de cualquier usuario) que referencien
     a este producto. Se usa antes de eliminar un producto, ya que si el

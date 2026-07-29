@@ -327,6 +327,12 @@ def process_wompi_transaction(
                 )
             product_repository.apply_stock_delta(db, product, -item.quantity)
 
+        # Ya se confirmó el pago: esos productos ya no tienen sentido
+        # seguir apareciendo en el carrito del cliente (queda incómodo
+        # ver algo que ya compró como si todavía estuviera "por comprar").
+        product_ids = [item.product_id for item in order.items]
+        cart_repository.delete_for_user_and_products(db, order.user_id, product_ids)
+
     order.status = new_status
     order.wompi_transaction_id = wompi_transaction_id
     db.commit()
