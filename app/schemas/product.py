@@ -41,5 +41,5 @@ class ProductRead(ProductBase):
     id: int
     image_url: str | None = None
     category: CategoryRead
-
+    cost: Decimal | None = None  # Solo para uso interno, no se filtra al público
     model_config = ConfigDict(from_attributes=True)
