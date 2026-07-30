@@ -32,6 +32,20 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
+@router.get("/{product_id}/admin", response_model=ProductAdminRead)
+def get_product_admin(
+    product_id: int,
+    db: Session = Depends(get_db),
+    is_admin: User = Depends(get_current_admin_user),
+):
+    """Igual que GET /{product_id}, pero solo-admin e incluye `cost` —
+    para poder precargar el campo Costo en el formulario de edición."""
+    try:
+        return product_service.get_product_or_raise(db, product_id)
+    except product_service.ProductNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+
 @router.post("/", response_model=ProductAdminRead, status_code=status.HTTP_201_CREATED)
 def create_product(
     payload: ProductCreate,
