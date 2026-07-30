@@ -83,6 +83,7 @@ class OrderItem(Base):
     # borra o cambia después, el pedido conserva estos datos igual.
     product_name = Column(String(150), nullable=False)
     unit_price = Column(Numeric(10, 2), nullable=False)
+    unit_cost = Column(Numeric(10, 2), nullable=True)
     quantity = Column(Integer, nullable=False)
 
     order = relationship("Order", back_populates="items")

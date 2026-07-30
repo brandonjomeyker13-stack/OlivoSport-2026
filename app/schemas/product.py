@@ -19,6 +19,11 @@ class ProductCreate(ProductBase):
     # categoría (ya existente) pertenece el producto.
     category_id: int = Field(...)
 
+    # Opcional a propósito (puede que no lo sepas al crear el producto).
+    # OJO: cost va acá y en ProductUpdate, pero NO en ProductBase/ProductRead
+    # — así nunca se filtra al público vía GET /products.
+    cost: Decimal | None = Field(default=None, ge=0, decimal_places=2)
+
 
 class ProductUpdate(BaseModel):
     """Todos los campos opcionales: solo se actualiza lo que se envíe."""
@@ -29,6 +34,7 @@ class ProductUpdate(BaseModel):
     price: Decimal | None = Field(default=None, gt=0, decimal_places=2)
     stock: int | None = Field(default=None, ge=0)
     category_id: int | None = Field(default=None)
+    cost: Decimal | None = Field(default=None, ge=0, decimal_places=2)
 
 
 class ProductRead(ProductBase):

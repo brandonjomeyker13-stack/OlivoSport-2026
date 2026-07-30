@@ -26,12 +26,27 @@ class CategoryNotFoundError(Exception):
 
 
 def create_product(
-    db: Session, *, name: str, color: str, size: str, price: Decimal, stock: int, category_id: int
+    db: Session,
+    *,
+    name: str,
+    color: str,
+    size: str,
+    price: Decimal,
+    stock: int,
+    category_id: int,
+    cost: Decimal | None = None,
 ) -> Product:
     if category_repository.get_by_id(db, category_id) is None:
         raise CategoryNotFoundError(f"Categoría {category_id} no encontrada.")
     return product_repository.create(
-        db, name=name, color=color, size=size, price=price, stock=stock, category_id=category_id
+        db,
+        name=name,
+        color=color,
+        size=size,
+        price=price,
+        stock=stock,
+        category_id=category_id,
+        cost=cost,
     )
 
 
@@ -52,6 +67,7 @@ def update_product(
     price: Decimal | None = None,
     stock: int | None = None,
     category_id: int | None = None,
+    cost: Decimal | None = None,
 ) -> Product:
     product = get_product_or_raise(db, product_id)
     if category_id is not None and category_repository.get_by_id(db, category_id) is None:
@@ -65,6 +81,7 @@ def update_product(
         price=price,
         stock=stock,
         category_id=category_id,
+        cost=cost,
     )
 
 

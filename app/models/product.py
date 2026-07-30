@@ -14,7 +14,7 @@ class Product(Base):
     price = Column(Numeric(10, 2), nullable=False)
     stock = Column(Integer, nullable=False, default=0)
     in_stock = Column(Boolean, default=True, nullable=False)
-
+    cost = Column(Numeric(10, 2), nullable=True)
     # Obligatoria: todo producto debe pertenecer a una categoría (la crea
     # el admin desde /categories) — no se puede crear un producto sin una.
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=False, index=True)

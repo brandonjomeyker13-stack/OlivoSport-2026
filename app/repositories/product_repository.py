@@ -48,7 +48,15 @@ def list_all(
 
 
 def create(
-    db: Session, *, name: str, color: str, size: str, price, stock: int, category_id: int
+    db: Session,
+    *,
+    name: str,
+    color: str,
+    size: str,
+    price,
+    stock: int,
+    category_id: int,
+    cost=None,
 ) -> Product:
     product = Product(
         name=name,
@@ -58,6 +66,7 @@ def create(
         stock=stock,
         in_stock=stock > 0,
         category_id=category_id,
+        cost=cost,
     )
     db.add(product)
     db.commit()

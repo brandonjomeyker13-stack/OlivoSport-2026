@@ -179,6 +179,7 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
                 product_id=product.id,
                 product_name=product.name,
                 unit_price=product.price,
+                unit_cost=product.cost,
                 quantity=quantity,
             )
         )
@@ -333,7 +334,12 @@ COMPLETED_ORDER_STATUSES = {
     OrderStatus.VOIDED,
     OrderStatus.ERROR,
 }
-
+SALE_ORDER_STATUSES = {
+    OrderStatus.APPROVED,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.AWAITING_CONFIRMATION,
+    OrderStatus.DELIVERED,
+}
 
 def list_my_orders(db: Session, user_id: int, stage: str | None = None) -> list[Order]:
     expire_stale_orders(db)
