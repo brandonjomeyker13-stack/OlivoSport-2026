@@ -6,7 +6,7 @@ from app.api.deps import get_current_admin_user
 from app.core.storage import upload_product_image
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.product import ProductCreate, ProductRead, ProductUpdate
+from app.schemas.product import ProductAdminRead, ProductCreate, ProductRead, ProductUpdate
 from app.services import product_service
 
 router = APIRouter()
@@ -32,7 +32,7 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
 
-@router.post("/", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProductAdminRead, status_code=status.HTTP_201_CREATED)
 def create_product(
     payload: ProductCreate,
     db: Session = Depends(get_db),
@@ -53,7 +53,7 @@ def create_product(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.put("/{product_id}", response_model=ProductRead)
+@router.put("/{product_id}", response_model=ProductAdminRead)
 def update_product(
     product_id: int,
     payload: ProductUpdate,
@@ -91,7 +91,8 @@ def delete_product(
     except product_service.ProductHasOrdersError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-@router.post("/{product_id}/image", response_model=ProductRead)
+
+@router.post("/{product_id}/image", response_model=ProductAdminRead)
 async def upload_image(
     product_id: int,
     file: UploadFile,

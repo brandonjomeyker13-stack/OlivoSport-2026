@@ -13,6 +13,17 @@ from app.repositories import cart_repository, product_repository
 
 logger = logging.getLogger("olivosport.orders")
 
+# Estados en los que un pedido representa dinero YA cobrado de verdad
+# (Wompi aprobó el pago). Es la fuente única de verdad de "esto es una
+# venta real" — se reusa en los reportes de /sales y al borrar productos,
+# para no tener dos definiciones de lo mismo que se puedan desincronizar.
+SALE_ORDER_STATUSES = {
+    OrderStatus.APPROVED,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.AWAITING_CONFIRMATION,
+    OrderStatus.DELIVERED,
+}
+
 # Estados finales que puede reportar Wompi para una transacción. Wompi
 # también puede mandar eventos con status intermedios (ej. "PENDING") que
 # simplemente ignoramos hasta que llegue el estado final.
@@ -179,6 +190,11 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
                 product_id=product.id,
                 product_name=product.name,
                 unit_price=product.price,
+                # Foto del COSTO en el momento de la venta, igual que ya
+                # se hace con unit_price. Si el costo del producto cambia
+                # después, las ventas viejas no se ven afectadas — y los
+                # reportes de /sales calculan la ganancia real de cada
+                # venta, no la ganancia "si hoy costara lo que cuesta hoy".
                 unit_cost=product.cost,
                 quantity=quantity,
             )
@@ -334,12 +350,7 @@ COMPLETED_ORDER_STATUSES = {
     OrderStatus.VOIDED,
     OrderStatus.ERROR,
 }
-SALE_ORDER_STATUSES = {
-    OrderStatus.APPROVED,
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.AWAITING_CONFIRMATION,
-    OrderStatus.DELIVERED,
-}
+
 
 def list_my_orders(db: Session, user_id: int, stage: str | None = None) -> list[Order]:
     expire_stale_orders(db)
@@ -471,17 +482,18 @@ def process_wompi_transaction(
 
 def clear_non_approved_references(db: Session, product_id: int) -> None:
     """Borra las referencias a este producto en pedidos que NO son ventas
-    reales (todo menos APPROVED). Se usa antes de eliminar un producto:
-    los pedidos APPROVED se dejan intactos a propósito, son historial de
-    ventas y no se tocan nunca."""
-    non_approved_order_ids = [
+    reales (todo lo que no esté en SALE_ORDER_STATUSES). Se usa antes de
+    eliminar un producto: las ventas reales (pagadas, sin importar si ya
+    se entregaron o siguen en camino) se dejan intactas a propósito, son
+    historial y no se tocan nunca."""
+    non_sale_order_ids = [
         row[0]
-        for row in db.query(Order.id).filter(Order.status != OrderStatus.APPROVED).all()
+        for row in db.query(Order.id).filter(Order.status.not_in(SALE_ORDER_STATUSES)).all()
     ]
-    if not non_approved_order_ids:
+    if not non_sale_order_ids:
         return
     db.query(OrderItem).filter(
         OrderItem.product_id == product_id,
-        OrderItem.order_id.in_(non_approved_order_ids),
+        OrderItem.order_id.in_(non_sale_order_ids),
     ).delete(synchronize_session=False)
     db.commit()
