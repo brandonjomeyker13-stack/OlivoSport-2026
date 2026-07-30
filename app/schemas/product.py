@@ -20,8 +20,7 @@ class ProductCreate(ProductBase):
     category_id: int = Field(...)
 
     # Opcional a propósito (puede que no lo sepas al crear el producto).
-    # OJO: cost va acá y en ProductUpdate, pero NO en ProductBase/ProductRead
-    # — así nunca se filtra al público vía GET /products.
+    # Costo de compra/fabricación, para calcular ganancia en /sales.
     cost: Decimal | None = Field(default=None, ge=0, decimal_places=2)
 
 
@@ -38,8 +37,20 @@ class ProductUpdate(BaseModel):
 
 
 class ProductRead(ProductBase):
+    """Vista PÚBLICA — la usan los endpoints que cualquiera puede llamar
+    (GET /products/, GET /products/{id}). A propósito NO incluye `cost`:
+    eso revelaría el margen de ganancia a cualquier cliente."""
+
     id: int
     image_url: str | None = None
     category: CategoryRead
-    cost: Decimal | None = None  # Solo para uso interno, no se filtra al público
+
     model_config = ConfigDict(from_attributes=True)
+
+
+class ProductAdminRead(ProductRead):
+    """Vista SOLO-ADMIN — la usan los endpoints protegidos con
+    get_current_admin_user (crear/editar/subir imagen). Incluye `cost`
+    para que el admin pueda ver y editar el costo cargado."""
+
+    cost: Decimal | None = None
