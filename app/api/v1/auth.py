@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.core.cookies import refresh_cookie_kwargs
+from app.core.cors import require_trusted_origin
 from app.core.google_oauth import InvalidGoogleTokenError, verify_google_id_token
 from app.core.limiter import limiter
 from app.db.session import get_db
@@ -126,7 +127,7 @@ def link_google_account(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[Depends(require_trusted_origin)])
 @limiter.limit("30/minute")
 def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     """El frontend llama esto al cargar la app (o cuando un request le
@@ -156,7 +157,11 @@ def refresh(request: Request, response: Response, db: Session = Depends(get_db))
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_trusted_origin)],
+)
 def logout(request: Request, response: Response, db: Session = Depends(get_db)):
     raw_refresh = request.cookies.get(settings.REFRESH_TOKEN_COOKIE_NAME)
     if raw_refresh:

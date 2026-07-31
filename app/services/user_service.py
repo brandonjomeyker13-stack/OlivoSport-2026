@@ -155,9 +155,10 @@ def set_password(db: Session, *, user: User, current_password: str | None, new_p
       actual — si no, cualquiera con el access_token robado podría
       cambiarla sin saber la original.
     """
-    if user.password_hash is not None:
-        if not current_password or not verify_password(current_password, user.password_hash):
-            raise InvalidCredentialsError("La contraseña actual no es correcta.")
+    if user.password_hash is not None and (
+        not current_password or not verify_password(current_password, user.password_hash)
+    ):
+        raise InvalidCredentialsError("La contraseña actual no es correcta.")
     user.password_hash = hash_password(new_password)
     db.commit()
     db.refresh(user)

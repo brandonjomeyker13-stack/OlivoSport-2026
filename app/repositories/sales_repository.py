@@ -1,14 +1,14 @@
 """Acceso a datos para reportes de ventas. Solo SELECT/agregaciones, sin
-reglas de negocio. La regla de qué cuenta como "venta" vive en
-order_service.SALE_ORDER_STATUSES — se importa de ahí para no duplicarla."""
+reglas de negocio. La regla de qué cuenta como "venta" está en
+models.order.SALE_ORDER_STATUSES — se importa de ahí para no duplicarla."""
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from app.models.order import Order, OrderItem
-from app.services.order_service import SALE_ORDER_STATUSES
+from app.models.order import SALE_ORDER_STATUSES, Order, OrderItem
 
 
 def _base_query(db: Session):
@@ -28,8 +28,11 @@ def _base_query(db: Session):
 
 
 def _row_to_summary(row) -> dict:
-    revenue = float(row.revenue or 0)
-    cost = float(row.cost or 0)
+    # Las sumas vienen como Decimal (las columnas son Numeric(10,2)) y se
+    # mantienen así hasta el schema: pasarlas por float redondea, y sobre
+    # miles de ítems esa diferencia se acumula en la ganancia reportada.
+    revenue: Decimal = row.revenue or Decimal("0")
+    cost: Decimal = row.cost or Decimal("0")
     return {
         "revenue": revenue,
         "cost": cost,
@@ -73,15 +76,4 @@ def get_sales_by_period(
         .order_by(period_col)
         .all()
     )
-    return [
-        {
-            "period": row.period,
-            "revenue": float(row.revenue or 0),
-            "cost": float(row.cost or 0),
-            "profit": float((row.revenue or 0) - (row.cost or 0)),
-            "items_sold": int(row.items_sold or 0),
-            "items_without_cost": int(row.items_without_cost or 0),
-            "orders_count": int(row.orders_count or 0),
-        }
-        for row in rows
-    ]
+    return [{"period": row.period, **_row_to_summary(row)} for row in rows]

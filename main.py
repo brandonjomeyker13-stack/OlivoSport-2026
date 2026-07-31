@@ -1,11 +1,12 @@
 """
-Punto de entrada local, solo para desarrollo.
+Atajo para crear las tablas en una base local vacía. NO levanta la API.
 
-- Ahora: crea las tablas directo con create_all (rápido para prototipar).
-- Cuando tengas datos reales: usa Alembic en vez de esta función
-  (ver README.md, sección "Migraciones").
-- Cuando conectes FastAPI: la app vive en app/main.py (uvicorn app.main:app),
-  este archivo NO se mezcla con ese.
+    python main.py            # crea las tablas con create_all
+    uvicorn app.main_app:app  # eso sí levanta la API (ver app/main_app.py)
+
+En una base con datos reales (producción) NO se usa esto: el esquema se
+maneja con Alembic (`alembic upgrade head`), que sí deja historial de
+cambios. Ver README.md.
 """
 
 from app.db.base import init_db

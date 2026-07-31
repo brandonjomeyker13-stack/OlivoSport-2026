@@ -4,25 +4,22 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import (
+    ACTIVE_ORDER_STATUSES,
+    COMPLETED_ORDER_STATUSES,
+    SALE_ORDER_STATUSES,
+    Order,
+    OrderItem,
+    OrderStatus,
+)
 from app.repositories import cart_repository, product_repository
 
 logger = logging.getLogger("olivosport.orders")
-
-# Estados en los que un pedido representa dinero YA cobrado de verdad
-# (Wompi aprobó el pago). Es la fuente única de verdad de "esto es una
-# venta real" — se reusa en los reportes de /sales y al borrar productos,
-# para no tener dos definiciones de lo mismo que se puedan desincronizar.
-SALE_ORDER_STATUSES = {
-    OrderStatus.APPROVED,
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.AWAITING_CONFIRMATION,
-    OrderStatus.DELIVERED,
-}
 
 # Estados finales que puede reportar Wompi para una transacción. Wompi
 # también puede mandar eventos con status intermedios (ej. "PENDING") que
@@ -66,6 +63,12 @@ class InvalidStatusTransitionError(Exception):
 
 class WompiNotConfiguredError(Exception):
     pass
+
+
+class WompiEventMismatchError(Exception):
+    """El evento viene firmado por Wompi, pero no corresponde a este
+    pedido (otro monto, otra moneda, o una transacción ya usada en otro
+    pedido). Ver `_validate_event_matches_order`."""
 
 
 def expire_stale_orders(db: Session) -> int:
@@ -123,6 +126,17 @@ def _generate_reference(order_id: int) -> str:
     # mismo pedido en un segundo intento de pago. El sufijo aleatorio
     # evita choques si el usuario reintenta pagar el mismo pedido.
     return f"olivosport-{order_id}-{secrets.token_hex(4)}"
+
+
+def to_cents(amount: Decimal) -> int:
+    """Pesos -> centavos, que es la unidad en la que Wompi cobra.
+
+    El redondeo se hace sobre el Decimal (nunca sobre un float): con
+    float, un total de 1234.565 puede quedar en 123456 centavos en vez de
+    123457, y ese centavo de diferencia hace que la firma de integridad
+    no cuadre y Wompi rechace el pago.
+    """
+    return int(Decimal(amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100)
 
 
 def _sign(reference: str, amount_in_cents: int, currency: str) -> str:
@@ -183,7 +197,7 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
 
     # Segunda pasada: ya validado todo, recién ahora se reserva de verdad.
     order_items = []
-    total = 0
+    total = Decimal("0")
     for product, quantity in locked_products:
         order_items.append(
             OrderItem(
@@ -199,7 +213,10 @@ def create_order_from_cart(db: Session, *, user_id: int) -> Order:
                 quantity=quantity,
             )
         )
-        total += float(product.price) * quantity
+        # product.price es Numeric(10,2) -> Decimal. Sumar en Decimal y no
+        # en float es lo que garantiza que el total cuadre al centavo con
+        # lo que se le cobra al cliente en Wompi.
+        total += product.price * quantity
         product_repository.apply_stock_delta(db, product, -quantity)
 
     order = Order(
@@ -223,7 +240,7 @@ def build_checkout_payload(order: Order) -> dict:
     if not settings.WOMPI_PUBLIC_KEY:
         raise WompiNotConfiguredError("Falta configurar WOMPI_PUBLIC_KEY.")
 
-    amount_in_cents = int(round(float(order.total_amount) * 100))
+    amount_in_cents = to_cents(order.total_amount)
     currency = settings.WOMPI_CURRENCY
     signature = _sign(order.reference, amount_in_cents, currency)
 
@@ -331,25 +348,6 @@ def get_checkout_payload_for_order(db: Session, order_id: int, user_id: int) -> 
     db.refresh(order)
 
     return build_checkout_payload(order)
-    return order
-
-
-# Agrupación semántica para separar "en curso" de "finalizados" en el
-# historial del cliente (GET /orders/?stage=active|completed).
-ACTIVE_ORDER_STATUSES = {
-    OrderStatus.PENDING,
-    OrderStatus.APPROVED,
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.AWAITING_CONFIRMATION,
-}
-COMPLETED_ORDER_STATUSES = {
-    OrderStatus.DELIVERED,
-    OrderStatus.CANCELLED,
-    OrderStatus.EXPIRED,
-    OrderStatus.DECLINED,
-    OrderStatus.VOIDED,
-    OrderStatus.ERROR,
-}
 
 
 def list_my_orders(db: Session, user_id: int, stage: str | None = None) -> list[Order]:
@@ -411,19 +409,65 @@ def confirm_delivery(db: Session, order_id: int, user_id: int) -> Order:
     return order
 
 
+def _validate_event_matches_order(
+    db: Session,
+    order: Order,
+    *,
+    wompi_transaction_id: str,
+    amount_in_cents: int | None,
+    currency: str | None,
+) -> None:
+    """La firma de Wompi solo cubre `transaction.id`, `transaction.status`
+    y `transaction.amount_in_cents` — la `reference` NO va firmada. O sea
+    que un evento legítimo de una compra barata sigue teniendo un checksum
+    válido si alguien le cambia la referencia por la de un pedido caro, y
+    ese pedido quedaría pago sin haberse cobrado.
+
+    Por eso, además de la firma, el evento tiene que cuadrar con el
+    pedido: mismo monto, misma moneda, y una transacción que no se haya
+    usado ya para otro pedido.
+    """
+    if amount_in_cents is not None and amount_in_cents != to_cents(order.total_amount):
+        raise WompiEventMismatchError(
+            f"El evento cobra {amount_in_cents} centavos y el pedido {order.id} "
+            f"vale {to_cents(order.total_amount)}."
+        )
+
+    if currency is not None and currency.upper() != settings.WOMPI_CURRENCY.upper():
+        raise WompiEventMismatchError(
+            f"El evento viene en {currency} y la tienda cobra en {settings.WOMPI_CURRENCY}."
+        )
+
+    ya_usada = (
+        db.query(Order.id)
+        .filter(
+            Order.wompi_transaction_id == wompi_transaction_id,
+            Order.id != order.id,
+        )
+        .first()
+    )
+    if ya_usada is not None:
+        raise WompiEventMismatchError(
+            f"La transacción {wompi_transaction_id} ya se aplicó al pedido {ya_usada[0]}."
+        )
+
+
 def process_wompi_transaction(
     db: Session,
     *,
     reference: str,
     wompi_status: str,
     wompi_transaction_id: str,
+    amount_in_cents: int | None = None,
+    currency: str | None = None,
 ) -> Order | None:
     """Procesa un evento `transaction.updated` YA VERIFICADO (firma
     correcta) que llega del webhook de Wompi.
 
     Es idempotente: si Wompi reintenta el mismo evento, no vuelve a
     descontar stock ni a pisar un estado de logística ya avanzado.
-    Devuelve None si no existe ningún pedido con esa referencia.
+    Devuelve None si no existe ningún pedido con esa referencia, y lanza
+    WompiEventMismatchError si el evento no cuadra con el pedido.
     """
     order = db.query(Order).filter(Order.reference == reference).with_for_update().first()
     if order is None:
@@ -433,6 +477,14 @@ def process_wompi_transaction(
         # Estados intermedios (ej. "PENDING" del lado de Wompi): no hay
         # nada que hacer todavía, esperamos el evento final.
         return order
+
+    _validate_event_matches_order(
+        db,
+        order,
+        wompi_transaction_id=wompi_transaction_id,
+        amount_in_cents=amount_in_cents,
+        currency=currency,
+    )
 
     new_status = OrderStatus(wompi_status)
 

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
+from app.schemas.password import Password
+
 
 class UserBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
@@ -7,7 +9,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+    password: Password
     # Debe ser explícitamente True: no hay valor por defecto, así el
     # frontend está obligado a mandar una casilla marcada por el usuario
     # (no premarcada), como exige la ley de Habeas Data en Colombia.
@@ -33,7 +35,7 @@ class GoogleAuthRequest(BaseModel):
     # cuando se está creando la cuenta por primera vez (se pide una única
     # vez en el flujo de registro con Google). En logins posteriores o en
     # cuentas ya existentes, este valor se ignora.
-    password: str | None = Field(default=None, min_length=8)
+    password: Password | None = None
 
 
 class GoogleLinkRequest(BaseModel):
@@ -46,7 +48,7 @@ class SetPasswordRequest(BaseModel):
     # Si el usuario todavía no tiene ninguna (cuenta creada solo con
     # Google), este campo se ignora.
     current_password: str | None = None
-    new_password: str = Field(..., min_length=8)
+    new_password: Password
 
 
 class UserRead(UserBase):

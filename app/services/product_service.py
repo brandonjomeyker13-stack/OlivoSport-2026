@@ -6,10 +6,29 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.product import Product
-from app.repositories import category_repository, product_repository
+from app.models.product_image import ProductImage
+from app.repositories import (
+    category_repository,
+    product_image_repository,
+    product_repository,
+)
+
+# Tope de imágenes por producto. Ninguna es obligatoria: un producto
+# puede quedarse en 0 y se sigue mostrando (el frontend pone su
+# placeholder). El límite existe para que la galería no crezca sin
+# control y la ficha siga cargando rápido en celular.
+MAX_PRODUCT_IMAGES = 4
 
 
 class ProductNotFoundError(Exception):
+    pass
+
+
+class TooManyProductImagesError(Exception):
+    pass
+
+
+class ProductImageNotFoundError(Exception):
     pass
 
 
@@ -47,6 +66,14 @@ def create_product(
         stock=stock,
         category_id=category_id,
         cost=cost,
+    )
+
+
+def list_products(
+    db: Session, *, skip: int, limit: int, category_id: int | None
+) -> list[Product]:
+    return product_repository.list_all(
+        db, skip=skip, limit=limit, category_id=category_id
     )
 
 
@@ -107,9 +134,73 @@ def delete_product(db: Session, product_id: int) -> None:
         ) from exc
 
 
-def set_product_image(db: Session, product_id: int, image_url: str) -> Product:
-    product = get_product_or_raise(db, product_id)
-    return product_repository.update(db, product, image_url=image_url)
+def add_product_images(
+    db: Session, product_id: int, images: list[tuple[str, str | None]]
+) -> Product:
+    """Agrega imágenes al final de la galería. `images` es una lista de
+    (url, ruta en el bucket).
+
+    Se bloquea la fila del producto (`FOR UPDATE`) mientras se cuenta y se
+    inserta: sin eso, dos subidas simultáneas leen "hay 3" al mismo
+    tiempo y el producto termina con 5 imágenes.
+    """
+    product = product_repository.get_by_id_for_update(db, product_id)
+    if product is None:
+        raise ProductNotFoundError(f"Producto {product_id} no encontrado.")
+
+    actuales = product_image_repository.list_by_product(db, product_id)
+    disponibles = MAX_PRODUCT_IMAGES - len(actuales)
+    if len(images) > disponibles:
+        raise TooManyProductImagesError(
+            f"'{product.name}' ya tiene {len(actuales)} de {MAX_PRODUCT_IMAGES} "
+            f"imágenes: solo caben {disponibles} más."
+        )
+
+    siguiente = len(actuales)
+    for offset, (image_url, storage_path) in enumerate(images):
+        product_image_repository.add(
+            db,
+            product_id=product_id,
+            image_url=image_url,
+            storage_path=storage_path,
+            position=siguiente + offset,
+        )
+
+    db.refresh(product)
+    return product
+
+
+def delete_product_image(db: Session, product_id: int, image_id: int) -> ProductImage:
+    """Quita una imagen de la galería y devuelve la fila borrada, para que
+    la capa de API sepa qué archivo eliminar del bucket."""
+    image = product_image_repository.get_by_id(db, image_id)
+    if image is None or image.product_id != product_id:
+        raise ProductImageNotFoundError(
+            f"El producto {product_id} no tiene una imagen {image_id}."
+        )
+
+    product_image_repository.delete(db, image)
+    # Las que quedan se corren para tapar el hueco: la siguiente pasa a
+    # ser la principal y la próxima subida encuentra su lugar libre.
+    product_image_repository.renumber(db, product_id)
+    return image
+
+
+def replace_product_images(
+    db: Session, product_id: int, images: list[tuple[str, str | None]]
+) -> tuple[Product, list[ProductImage]]:
+    """Deja la galería con exactamente estas imágenes. Devuelve también
+    las que se quitaron, para poder borrar sus archivos del bucket."""
+    if len(images) > MAX_PRODUCT_IMAGES:
+        raise TooManyProductImagesError(
+            f"Un producto no puede tener más de {MAX_PRODUCT_IMAGES} imágenes."
+        )
+
+    anteriores = product_image_repository.list_by_product(db, product_id)
+    for image in anteriores:
+        product_image_repository.delete(db, image)
+
+    return add_product_images(db, product_id, images), anteriores
 
 
 def reserve_stock(db: Session, product_id: int, quantity: int) -> Product:

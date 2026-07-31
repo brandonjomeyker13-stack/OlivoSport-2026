@@ -1,49 +1,43 @@
+"""Configuración de Alembic para OlivoSport.
+
+La URL de la base NO se escribe en alembic.ini: se lee de
+`settings.DATABASE_URL` (la misma variable que usa la app), para que
+`alembic upgrade head` apunte siempre a la misma base que el backend,
+tanto en local como en Render, y para no dejar credenciales en un
+archivo versionado.
+
+`target_metadata` apunta a `Base.metadata`: importar `app.db.base` trae
+todos los modelos con él, que es lo que necesita `--autogenerate` para
+ver las tablas nuevas.
+"""
+
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 
 from alembic import context
+from app.core.config import settings
+from app.db.base import Base
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
-
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
-    url = config.get_main_option("sqlalchemy.url")
+    """Genera el SQL sin conectarse a la base (`alembic upgrade head --sql`)."""
     context.configure(
-        url=url,
+        url=settings.DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # Sin esto, Alembic no detecta cambios de tipo ni de default en
+        # una columna que ya existe (ej. Numeric(10,2) -> Numeric(12,2)).
+        compare_type=True,
+        compare_server_default=True,
     )
 
     with context.begin_transaction():
@@ -51,21 +45,18 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    """Corre las migraciones contra la base real."""
+    # Se construye el engine a mano en vez de leer "sqlalchemy.url" del
+    # .ini: ConfigParser interpreta los `%` como interpolación, y una
+    # contraseña url-encoded (ej. `%40` por una @) rompería la conexión.
+    connectable = create_engine(settings.DATABASE_URL, poolclass=pool.NullPool)
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+            compare_server_default=True,
         )
 
         with context.begin_transaction():

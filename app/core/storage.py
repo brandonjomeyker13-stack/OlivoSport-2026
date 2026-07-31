@@ -7,12 +7,16 @@ solo el service_role puede subir archivos sin pasar por las políticas
 de acceso del bucket.
 """
 
+import logging
 import uuid
+from typing import NamedTuple
 
 from fastapi import HTTPException, UploadFile, status
 from supabase import create_client
 
 from app.core.config import settings
+
+logger = logging.getLogger("olivosport.storage")
 
 BUCKET_NAME = "product-images"
 
@@ -50,8 +54,16 @@ def _get_client():
     return create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
 
 
-async def upload_product_image(file: UploadFile, product_id: int) -> str:
-    """Sube la imagen y devuelve la URL pública para guardar en products.image_url."""
+class UploadedImage(NamedTuple):
+    """La URL es la que consume el frontend; el path es lo que hay que
+    mandarle a Supabase para borrar el archivo después."""
+
+    url: str
+    path: str
+
+
+async def upload_product_image(file: UploadFile, product_id: int) -> UploadedImage:
+    """Sube la imagen al bucket y devuelve su URL pública y su ruta."""
 
     # Chequeo rápido del header como primer filtro (no es la validación
     # real, solo evita leer el archivo completo si viene claramente mal).
@@ -88,4 +100,18 @@ async def upload_product_image(file: UploadFile, product_id: int) -> str:
         path, contents, {"content-type": real_content_type}
     )
 
-    return client.storage.from_(BUCKET_NAME).get_public_url(path)
+    return UploadedImage(
+        url=client.storage.from_(BUCKET_NAME).get_public_url(path),
+        path=path,
+    )
+
+
+def delete_product_image_file(storage_path: str) -> None:
+    """Borra el archivo del bucket. No revienta si falla: la imagen ya se
+    quitó de la base y para el usuario desapareció; lo peor que puede
+    pasar es que quede un archivo huérfano ocupando espacio, y eso no
+    justifica devolverle un error al admin."""
+    try:
+        _get_client().storage.from_(BUCKET_NAME).remove([storage_path])
+    except Exception:
+        logger.exception("No se pudo borrar %s del bucket %s", storage_path, BUCKET_NAME)

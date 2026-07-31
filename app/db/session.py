@@ -1,7 +1,8 @@
 """
 Conexión a la base de datos: engine + sesiones.
 
-`get_db` está pensado como dependencia de FastAPI a futuro:
+`get_db` es la dependencia que usan todos los endpoints; abre una sesión
+por request y la cierra al terminar, pase lo que pase:
 
     @router.get("/products")
     def list_products(db: Session = Depends(get_db)):
