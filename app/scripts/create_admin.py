@@ -19,9 +19,9 @@ import sys
 
 sys.path.insert(0, ".")
 
-from app.core.security import hash_password  # noqa: E402
-from app.db.session import SessionLocal  # noqa: E402
-from app.models.user import User  # noqa: E402
+from app.core.security import hash_password
+from app.db.session import SessionLocal
+from app.models.user import User
 
 
 def main() -> None:

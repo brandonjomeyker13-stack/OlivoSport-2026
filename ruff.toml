@@ -1,0 +1,31 @@
+# Configuración de ruff (linter + orden de imports).
+#
+# Correr:  ruff check .        (revisar)
+#          ruff check --fix .  (arreglar lo automático)
+
+line-length = 100
+target-version = "py310"
+
+[lint]
+select = [
+    "E",    # errores de estilo (pycodestyle)
+    "F",    # errores reales (pyflakes): imports sin usar, nombres indefinidos
+    "I",    # orden de los imports
+    "B",    # bugs comunes (flake8-bugbear)
+    "UP",   # sintaxis vieja que ya se puede escribir mejor
+    "SIM",  # simplificaciones
+    "RUF",
+]
+ignore = [
+    # `Depends()` / `Query()` en el default de un parámetro es EL idiom de
+    # FastAPI, no un bug: sin esto, ruff marca casi todos los endpoints.
+    "B008",
+    # Las líneas largas no rompen nada y varias son docstrings en español.
+    "E501",
+]
+
+[lint.per-file-ignores]
+# Alembic genera estos archivos con su propia plantilla.
+"alembic/versions/*" = ["E402"]
+# base.py importa los modelos al final a propósito (evita import circular).
+"app/db/base.py" = ["E402"]

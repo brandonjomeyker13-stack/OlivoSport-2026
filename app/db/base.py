@@ -12,12 +12,12 @@ Base = declarative_base()
 
 # Import al final para evitar import circular: los modelos importan `Base`
 # de este mismo módulo.
-from app.models.user import User  # noqa: E402,F401
-from app.models.category import Category  # noqa: E402,F401
-from app.models.product import Product  # noqa: E402,F401
-from app.models.cart import CartItem  # noqa: E402,F401
-from app.models.order import Order, OrderItem  # noqa: E402,F401
-from app.models.refresh_token import RefreshToken  # noqa: E402,F401
+from app.models.cart import CartItem  # noqa: F401
+from app.models.category import Category  # noqa: F401
+from app.models.order import Order, OrderItem  # noqa: F401
+from app.models.product import Product  # noqa: F401
+from app.models.refresh_token import RefreshToken  # noqa: F401
+from app.models.user import User  # noqa: F401
 
 
 def init_db() -> None:
