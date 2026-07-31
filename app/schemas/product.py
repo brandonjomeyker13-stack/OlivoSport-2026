@@ -5,6 +5,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.schemas.category import CategoryRead
 
 
+class ProductImageRead(BaseModel):
+    id: int
+    image_url: str
+    position: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ProductBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=150)
     color: str = Field(..., min_length=2, max_length=50)
@@ -42,8 +50,16 @@ class ProductRead(ProductBase):
     eso revelaría el margen de ganancia a cualquier cliente."""
 
     id: int
-    image_url: str | None = None
     category: CategoryRead
+
+    # De 0 a 4, en el orden en que se muestran. La primera es la
+    # principal.
+    images: list[ProductImageRead] = []
+
+    # La URL de la imagen principal, o None si no tiene ninguna. Sale de
+    # `images[0]`; se mantiene en la respuesta para no romper al frontend
+    # que ya la usa.
+    image_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

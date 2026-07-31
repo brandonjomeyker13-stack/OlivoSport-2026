@@ -130,12 +130,29 @@ models`. Un repositorio nunca llama a un service.
 | Grupo | Ruta base | Qué hace |
 |---|---|---|
 | auth | `/api/v1/auth` | registro, login, Google, refresh, logout, perfil |
-| products | `/api/v1/products` | catálogo público; crear/editar/imagen es solo-admin |
+| products | `/api/v1/products` | catálogo público; crear/editar/imágenes es solo-admin |
 | categories | `/api/v1/categories` | listar (público) y crear (admin) |
 | cart | `/api/v1/cart` | carrito del usuario autenticado |
 | orders | `/api/v1/orders` | checkout, pagar, cancelar, entregas |
 | webhooks | `/api/v1/webhooks/wompi` | eventos de Wompi (público, firmado) |
 | sales | `/api/v1/sales` | reportes de ventas (solo-admin) |
+
+### Imágenes de producto
+
+Cada producto puede tener **de 0 a 4** imágenes (ninguna es obligatoria).
+Viven en la tabla `product_images` y se suben a Supabase Storage; solo el
+admin puede tocarlas.
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| POST | `/products/{id}/images` | agrega imágenes (campo `files`, se puede repetir); 409 si pasa de 4 |
+| DELETE | `/products/{id}/images/{image_id}` | quita una y corre las demás; también borra el archivo del bucket |
+| POST | `/products/{id}/image` | *(obsoleto)* deja el producto con esa única imagen |
+
+En la respuesta, `images` viene ordenada por `position` y `image_url` es
+la primera de la lista (la principal). `image_url` ya no es una columna:
+sale de la galería, así que no hay dos copias de la misma URL que se
+puedan desincronizar.
 
 ## Cómo funciona la autenticación
 

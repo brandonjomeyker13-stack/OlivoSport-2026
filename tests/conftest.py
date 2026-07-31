@@ -23,6 +23,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import TypeDecorator
 
+from app.api.deps import get_current_admin_user
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import hash_password
@@ -110,6 +111,34 @@ def client(db):
     finally:
         limiter.enabled = True
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_client(client, db):
+    """Como `client`, pero saltándose el login del admin.
+
+    Solo reemplaza QUIÉN es el usuario, no el `Depends(get_current_admin_user)`
+    de cada endpoint: si alguien le quita esa dependencia a una ruta de
+    admin, los tests que dependen de ella igual la seguirían pegando sin
+    token y no avisarían. Por eso los tests de "esto es solo para el
+    admin" usan el `client` normal.
+    """
+    admin = User(
+        name="Admin de prueba",
+        email="admin@pruebas.olivosport.co",
+        password_hash=hash_password("password-de-prueba"),
+        is_active=True,
+        is_admin=True,
+        accepted_terms=True,
+    )
+    db.add(admin)
+    db.commit()
+
+    app.dependency_overrides[get_current_admin_user] = lambda: admin
+    try:
+        yield client
+    finally:
+        app.dependency_overrides.pop(get_current_admin_user, None)
 
 
 @pytest.fixture
