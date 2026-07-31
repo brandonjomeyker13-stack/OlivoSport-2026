@@ -50,6 +50,14 @@ def create_product(
     )
 
 
+def list_products(
+    db: Session, *, skip: int, limit: int, category_id: int | None
+) -> list[Product]:
+    return product_repository.list_all(
+        db, skip=skip, limit=limit, category_id=category_id
+    )
+
+
 def get_product_or_raise(db: Session, product_id: int) -> Product:
     product = product_repository.get_by_id(db, product_id)
     if product is None:

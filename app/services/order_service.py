@@ -9,21 +9,17 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import (
+    ACTIVE_ORDER_STATUSES,
+    COMPLETED_ORDER_STATUSES,
+    SALE_ORDER_STATUSES,
+    Order,
+    OrderItem,
+    OrderStatus,
+)
 from app.repositories import cart_repository, product_repository
 
 logger = logging.getLogger("olivosport.orders")
-
-# Estados en los que un pedido representa dinero YA cobrado de verdad
-# (Wompi aprobó el pago). Es la fuente única de verdad de "esto es una
-# venta real" — se reusa en los reportes de /sales y al borrar productos,
-# para no tener dos definiciones de lo mismo que se puedan desincronizar.
-SALE_ORDER_STATUSES = {
-    OrderStatus.APPROVED,
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.AWAITING_CONFIRMATION,
-    OrderStatus.DELIVERED,
-}
 
 # Estados finales que puede reportar Wompi para una transacción. Wompi
 # también puede mandar eventos con status intermedios (ej. "PENDING") que
@@ -352,24 +348,6 @@ def get_checkout_payload_for_order(db: Session, order_id: int, user_id: int) -> 
     db.refresh(order)
 
     return build_checkout_payload(order)
-
-
-# Agrupación semántica para separar "en curso" de "finalizados" en el
-# historial del cliente (GET /orders/?stage=active|completed).
-ACTIVE_ORDER_STATUSES = {
-    OrderStatus.PENDING,
-    OrderStatus.APPROVED,
-    OrderStatus.IN_TRANSIT,
-    OrderStatus.AWAITING_CONFIRMATION,
-}
-COMPLETED_ORDER_STATUSES = {
-    OrderStatus.DELIVERED,
-    OrderStatus.CANCELLED,
-    OrderStatus.EXPIRED,
-    OrderStatus.DECLINED,
-    OrderStatus.VOIDED,
-    OrderStatus.ERROR,
-}
 
 
 def list_my_orders(db: Session, user_id: int, stage: str | None = None) -> list[Order]:
