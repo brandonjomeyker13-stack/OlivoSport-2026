@@ -54,12 +54,23 @@ async def wompi_event(request: Request, db: Session = Depends(get_db)):
         logger.warning("Evento de Wompi con datos incompletos: %s", payload)
         return {"received": True}
 
-    order = order_service.process_wompi_transaction(
-        db,
-        reference=reference,
-        wompi_status=wompi_status,
-        wompi_transaction_id=wompi_transaction_id,
-    )
+    try:
+        order = order_service.process_wompi_transaction(
+            db,
+            reference=reference,
+            wompi_status=wompi_status,
+            wompi_transaction_id=wompi_transaction_id,
+            amount_in_cents=transaction.get("amount_in_cents"),
+            currency=transaction.get("currency"),
+        )
+    except order_service.WompiEventMismatchError as exc:
+        # Firma válida pero el evento no cuadra con el pedido: el pedido se
+        # deja como está (si estaba PENDING, expira solo y libera el stock).
+        logger.error(
+            "Webhook de Wompi rechazado para reference=%s (transaccion=%s): %s",
+            reference, wompi_transaction_id, exc,
+        )
+        return {"received": True}
 
     if order is None:
         logger.error(
