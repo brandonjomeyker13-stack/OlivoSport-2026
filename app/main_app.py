@@ -1,10 +1,10 @@
 """
 App de FastAPI. Se corre con:
 
-    uvicorn app.main_app:app --reload
+    uvicorn app.main:app --reload
 
-(el `main.py` de la raíz es otra cosa: solo crea las tablas en local, no
-levanta la API).
+(el `main.py` de la raíz sigue siendo solo para crear las tablas, no lo
+mezcles con este archivo).
 """
 
 import logging
@@ -53,13 +53,19 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# La lista de orígenes vive en app/core/cors.py porque también la usa el
-# chequeo de Origin de /auth/refresh y /auth/logout.
+# CORS para orígenes locales y dominios Lovable. El regex cubre el subdominio
+# de preview, que cambia por proyecto/sesión.
 # allow_credentials=True es OBLIGATORIO ahora que el refresh token viaja
 # en una cookie httpOnly cross-site (Lovable != dominio del backend); sin
 # esto el navegador ni siquiera la manda. Por eso NO se puede usar "*" en
 # allow_origins/allow_origin_regex — el navegador lo rechaza cuando hay
-# credentials de por medio.
+# credentials de por medio, así que la lista de orígenes de abajo debe
+# mantenerse explícita.
+#
+# ALLOWED_ORIGINS/ALLOWED_ORIGIN_REGEX viven en app/core/cors.py — es la
+# MISMA lista que usa require_trusted_origin (protección CSRF de
+# /auth/refresh y /auth/logout). Un solo lugar para editarla evita que
+# las dos protecciones queden desincronizadas.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
