@@ -11,6 +11,7 @@ Las variables de entorno que necesita `app.core.config` las define
 `pytest.ini`, así que importar la app desde acá es seguro.
 """
 
+import hashlib
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -22,16 +23,23 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from sqlalchemy.types import TypeDecorator
 
+from app.core.config import settings
 from app.core.limiter import limiter
 from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main_app import app
 from app.models.category import Category
+from app.models.order import Order
 from app.models.product import Product
 from app.models.user import User
+from app.repositories import cart_repository
+from app.services import order_service
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", "sqlite+pysqlite:///:memory:")
+
+# Lo que Wompi firma de cada transacción. OJO: la `reference` NO está acá.
+PROPIEDADES_FIRMADAS = ["transaction.id", "transaction.status", "transaction.amount_in_cents"]
 
 
 class _DateTimeConZonaHoraria(TypeDecorator):
@@ -166,3 +174,68 @@ def crear_usuario(db):
 @pytest.fixture
 def usuario(crear_usuario) -> User:
     return crear_usuario()
+
+
+@pytest.fixture
+def pedido_pendiente(db):
+    """Deja un pedido PENDING (con su stock ya reservado) listo para
+    simularle eventos de Wompi."""
+
+    def _pedido_pendiente(usuario: User, producto: Product, cantidad: int = 2) -> Order:
+        cart_repository.create(
+            db, user_id=usuario.id, product_id=producto.id, quantity=cantidad
+        )
+        return order_service.create_order_from_cart(db, user_id=usuario.id)
+
+    return _pedido_pendiente
+
+
+@pytest.fixture
+def evento_wompi():
+    """Arma un evento `transaction.updated` con checksum válido (o con uno
+    inválido, si le pasas otro `secret`). Por defecto cobra exactamente lo
+    que vale el pedido, que es lo que hace Wompi.
+
+    El checksum se calcula acá a mano a propósito: si se armara llamando a
+    `verify_event_signature`, los tests de firma no probarían nada.
+    """
+
+    def _evento_wompi(
+        *,
+        pedido: Order | None = None,
+        reference: str | None = None,
+        status: str,
+        transaction_id: str = "12345-1699999999-99999",
+        amount_in_cents: int | None = None,
+        currency: str | None = None,
+        timestamp: int = 1699999999,
+        secret: str | None = None,
+    ) -> dict:
+        if pedido is not None:
+            reference = reference or pedido.reference
+            if amount_in_cents is None:
+                amount_in_cents = order_service.to_cents(pedido.total_amount)
+
+        transaction = {
+            "id": transaction_id,
+            "status": status,
+            "reference": reference,
+            "amount_in_cents": amount_in_cents,
+            "currency": currency or settings.WOMPI_CURRENCY,
+        }
+        concatenado = "".join(
+            str(transaction[prop.split(".")[1]]) for prop in PROPIEDADES_FIRMADAS
+        )
+        concatenado += f"{timestamp}{secret or settings.WOMPI_EVENTS_SECRET}"
+
+        return {
+            "event": "transaction.updated",
+            "data": {"transaction": transaction},
+            "timestamp": timestamp,
+            "signature": {
+                "properties": PROPIEDADES_FIRMADAS,
+                "checksum": hashlib.sha256(concatenado.encode("utf-8")).hexdigest(),
+            },
+        }
+
+    return _evento_wompi
