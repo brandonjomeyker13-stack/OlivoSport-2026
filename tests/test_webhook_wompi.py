@@ -153,3 +153,21 @@ def test_otro_tipo_de_evento_se_ignora(
     assert client.post(WEBHOOK_URL, json=evento).status_code == 200
     db.refresh(pedido)
     assert pedido.status == OrderStatus.PENDING
+
+
+def test_un_evento_incompleto_no_deja_los_datos_del_comprador_en_el_log(
+    client, caplog, evento_wompi
+):
+    """El evento de Wompi trae email, teléfono y datos del medio de pago
+    del comprador: si se loguea el payload entero, esa información queda
+    guardada en los logs de Render sin necesidad."""
+    evento = evento_wompi(reference=None, status="APPROVED", amount_in_cents=5000)
+    evento["data"]["transaction"]["customer_email"] = "cliente@pruebas.olivosport.co"
+    evento["data"]["transaction"]["customer_data"] = {"phone_number": "3001234567"}
+
+    with caplog.at_level("WARNING"):
+        assert client.post(WEBHOOK_URL, json=evento).status_code == 200
+
+    assert "cliente@pruebas.olivosport.co" not in caplog.text
+    assert "3001234567" not in caplog.text
+    assert "reference" in caplog.text

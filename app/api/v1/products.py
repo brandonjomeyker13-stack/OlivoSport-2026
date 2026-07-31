@@ -19,9 +19,9 @@ def list_products(
     category_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    from app.repositories import product_repository
-
-    return product_repository.list_all(db, skip=skip, limit=limit, category_id=category_id)
+    return product_service.list_products(
+        db, skip=skip, limit=limit, category_id=category_id
+    )
 
 
 @router.get("/{product_id}", response_model=ProductRead)

@@ -35,6 +35,39 @@ class OrderStatus(str, enum.Enum):
     DELIVERED = "DELIVERED"  # ambas partes de acuerdo (o se confirmó solo tras 5 días sin respuesta)
 
 
+# Los grupos viven acá, junto al enum, y no en un service: los usan tanto
+# los services como los repositorios de reportes, y un repositorio no
+# puede importar de un service (la dependencia va en el otro sentido).
+
+# Estados en los que un pedido representa dinero YA cobrado de verdad
+# (Wompi aprobó el pago). Es la fuente única de verdad de "esto es una
+# venta real" — se reusa en los reportes de /sales y al borrar productos,
+# para no tener dos definiciones de lo mismo que se puedan desincronizar.
+SALE_ORDER_STATUSES = {
+    OrderStatus.APPROVED,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.AWAITING_CONFIRMATION,
+    OrderStatus.DELIVERED,
+}
+
+# Agrupación para separar "en curso" de "finalizados" en el historial del
+# cliente (GET /orders/?stage=active|completed).
+ACTIVE_ORDER_STATUSES = {
+    OrderStatus.PENDING,
+    OrderStatus.APPROVED,
+    OrderStatus.IN_TRANSIT,
+    OrderStatus.AWAITING_CONFIRMATION,
+}
+COMPLETED_ORDER_STATUSES = {
+    OrderStatus.DELIVERED,
+    OrderStatus.CANCELLED,
+    OrderStatus.EXPIRED,
+    OrderStatus.DECLINED,
+    OrderStatus.VOIDED,
+    OrderStatus.ERROR,
+}
+
+
 class Order(Base):
     __tablename__ = "orders"
 

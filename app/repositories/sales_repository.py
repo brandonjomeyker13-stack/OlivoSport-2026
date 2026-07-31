@@ -1,6 +1,6 @@
 """Acceso a datos para reportes de ventas. Solo SELECT/agregaciones, sin
-reglas de negocio. La regla de qué cuenta como "venta" vive en
-order_service.SALE_ORDER_STATUSES — se importa de ahí para no duplicarla."""
+reglas de negocio. La regla de qué cuenta como "venta" está en
+models.order.SALE_ORDER_STATUSES — se importa de ahí para no duplicarla."""
 
 from datetime import datetime
 from decimal import Decimal
@@ -8,8 +8,7 @@ from decimal import Decimal
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from app.models.order import Order, OrderItem
-from app.services.order_service import SALE_ORDER_STATUSES
+from app.models.order import SALE_ORDER_STATUSES, Order, OrderItem
 
 
 def _base_query(db: Session):
