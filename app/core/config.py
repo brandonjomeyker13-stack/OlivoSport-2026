@@ -38,6 +38,16 @@ class Settings(BaseSettings):
     # Colombia: siempre COP.
     WOMPI_CURRENCY: str = "COP"
 
+    # Cuántos proxies de confianza hay delante de la app. En Render y
+    # detrás de Cloudflare es 1; corriendo directo, 0. Se usa para sacar
+    # la IP real del cliente en el rate limit (ver app/core/limiter.py).
+    TRUSTED_PROXY_HOPS: int = 0
+
+    # Dónde lleva la cuenta el rate limiter. "memory://" sirve con una
+    # sola instancia; con varias hay que apuntarlo a un Redis compartido
+    # (ej. redis://default:...@host:6379) o cada una contará por su lado.
+    RATE_LIMIT_STORAGE_URI: str = "memory://"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -147,9 +147,25 @@ models`. Un repositorio nunca llama a un service.
   nuevo. Si alguien reusa un token ya rotado, se asume robo y se revocan
   **todas** las sesiones de ese usuario.
 - Admin es simplemente `is_admin` en la tabla `users`.
+- `/auth/refresh` y `/auth/logout` exigen que el `Origin` sea uno de los
+  dominios conocidos: como la cookie es `SameSite=None`, si no, cualquier
+  página podría dispararle esas llamadas al visitante (CSRF).
+- Las contraseñas van de 8 a 72 **bytes**: bcrypt ignora lo que pase de
+  72 sin avisar, y ahí dos contraseñas distintas servían la una por la
+  otra.
 
 El frontend tiene que llamar con `credentials: "include"` para que la
-cookie viaje; los orígenes permitidos están en `app/main_app.py`.
+cookie viaje; los orígenes permitidos están en `app/core/cors.py`.
+
+### Rate limit
+
+100 requests/minuto por IP en general, y más estricto en login, registro
+y checkout. Dos cosas que hay que configurar bien al desplegar:
+
+- `TRUSTED_PROXY_HOPS=1` en Render. Sin esto la app ve la IP del proxy y
+  **todos los usuarios comparten el mismo cupo**.
+- `RATE_LIMIT_STORAGE_URI` apuntando a un Redis si corres más de una
+  instancia; en memoria cada una cuenta por su lado.
 
 ## Pagos con Wompi
 

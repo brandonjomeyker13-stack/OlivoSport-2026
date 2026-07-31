@@ -16,6 +16,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.api.v1 import auth, cart, categories, orders, products, sales, webhooks
+from app.core.cors import ALLOWED_ORIGIN_REGEX, ALLOWED_ORIGINS
 from app.core.limiter import limiter
 from app.core.security_headers import SecurityHeadersMiddleware
 
@@ -52,26 +53,17 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# CORS para orígenes locales y dominios Lovable. El regex cubre el subdominio
-# de preview, que cambia por proyecto/sesión.
+# La lista de orígenes vive en app/core/cors.py porque también la usa el
+# chequeo de Origin de /auth/refresh y /auth/logout.
 # allow_credentials=True es OBLIGATORIO ahora que el refresh token viaja
 # en una cookie httpOnly cross-site (Lovable != dominio del backend); sin
 # esto el navegador ni siquiera la manda. Por eso NO se puede usar "*" en
 # allow_origins/allow_origin_regex — el navegador lo rechaza cuando hay
-# credentials de por medio, así que la lista de orígenes de abajo debe
-# mantenerse explícita.
-origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-
+# credentials de por medio.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_origin_regex=r"https://.*\.(lovable\.app|lovableproject\.com)",
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
