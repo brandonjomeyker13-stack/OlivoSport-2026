@@ -6,7 +6,7 @@ seguridad enorme).
 Uso (desde la raíz del proyecto, con el .env / variables de entorno
 correctas para DATABASE_URL):
 
-    python scripts/create_admin.py admin@olivosport.com "Nombre Admin" "contraseña-segura"
+    python -m app.scripts.create_admin admin@olivosport.com "Nombre Admin" "contraseña-segura"
 
 Si el email ya existe, lo promueve a is_admin=True en vez de crear un
 usuario duplicado. La contraseña solo se usa si el usuario es nuevo.
@@ -17,8 +17,6 @@ mismo comando ahí (ya tiene las env vars de producción cargadas).
 
 import sys
 
-sys.path.insert(0, ".")
-
 from app.core.security import hash_password
 from app.db.session import SessionLocal
 from app.models.user import User
@@ -26,7 +24,7 @@ from app.models.user import User
 
 def main() -> None:
     if len(sys.argv) != 4:
-        print('Uso: python scripts/create_admin.py <email> "<nombre>" "<password>"')
+        print('Uso: python -m app.scripts.create_admin <email> "<nombre>" "<password>"')
         sys.exit(1)
 
     email, name, password = sys.argv[1], sys.argv[2], sys.argv[3]
