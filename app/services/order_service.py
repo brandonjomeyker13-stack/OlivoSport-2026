@@ -223,7 +223,7 @@ def build_checkout_payload(order: Order) -> dict:
     if not settings.WOMPI_PUBLIC_KEY:
         raise WompiNotConfiguredError("Falta configurar WOMPI_PUBLIC_KEY.")
 
-    amount_in_cents = int(round(float(order.total_amount) * 100))
+    amount_in_cents = round(float(order.total_amount) * 100)
     currency = settings.WOMPI_CURRENCY
     signature = _sign(order.reference, amount_in_cents, currency)
 
