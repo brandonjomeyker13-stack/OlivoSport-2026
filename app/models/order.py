@@ -4,6 +4,7 @@
 de precio después, los pedidos viejos no se ven afectados."""
 
 import enum
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Column,
@@ -17,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
+from app.core.dias_habiles import fin_del_plazo
 from app.db.base import Base
 
 
@@ -67,6 +69,19 @@ COMPLETED_ORDER_STATUSES = {
     OrderStatus.ERROR,
 }
 
+# Derecho de retracto, Ley 1480 de 2011 art. 47: 5 días HÁBILES contados
+# desde la entrega del bien. El cliente no tiene que justificar nada.
+RETRACTO_DIAS_HABILES = 5
+
+# Estados en los que la mercancía ya está en manos del cliente y por lo
+# tanto puede retractarse. AWAITING_CONFIRMATION cuenta: la dueña ya
+# entregó, que el cliente no haya apretado el botón de confirmar no le
+# quita el derecho ni le corre el plazo.
+RETURNABLE_ORDER_STATUSES = {
+    OrderStatus.AWAITING_CONFIRMATION,
+    OrderStatus.DELIVERED,
+}
+
 
 class Order(Base):
     __tablename__ = "orders"
@@ -103,6 +118,29 @@ class Order(Base):
 
     user = relationship("User")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    returns = relationship(
+        "OrderReturn", back_populates="order", cascade="all, delete-orphan"
+    )
+
+    @property
+    def return_deadline(self) -> datetime | None:
+        """Hasta cuándo puede retractarse el cliente. None si el pedido
+        todavía no se entregó (el plazo no ha empezado a correr)."""
+        if self.delivered_at is None:
+            return None
+        return fin_del_plazo(self.delivered_at, RETRACTO_DIAS_HABILES)
+
+    @property
+    def can_request_return(self) -> bool:
+        """Para que el frontend sepa si mostrar el botón de devolver. No
+        mira si ya se devolvió todo lo del pedido — eso lo valida el
+        service, que sí puede consultar la base."""
+        vence = self.return_deadline
+        return (
+            self.status in RETURNABLE_ORDER_STATUSES
+            and vence is not None
+            and datetime.now(timezone.utc) <= vence
+        )
 
 
 class OrderItem(Base):

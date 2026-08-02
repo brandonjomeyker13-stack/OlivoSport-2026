@@ -134,6 +134,7 @@ models`. Un repositorio nunca llama a un service.
 | categories | `/api/v1/categories` | listar (público) y crear (admin) |
 | cart | `/api/v1/cart` | carrito del usuario autenticado |
 | orders | `/api/v1/orders` | checkout, pagar, cancelar, entregas |
+| returns | `/api/v1/returns` | devoluciones por derecho de retracto |
 | webhooks | `/api/v1/webhooks/wompi` | eventos de Wompi (público, firmado) |
 | sales | `/api/v1/sales` | reportes de ventas (solo-admin) |
 
@@ -153,6 +154,54 @@ En la respuesta, `images` viene ordenada por `position` y `image_url` es
 la primera de la lista (la principal). `image_url` ya no es una columna:
 sale de la galería, así que no hay dos copias de la misma URL que se
 puedan desincronizar.
+
+### Devoluciones (derecho de retracto)
+
+Ley 1480 de 2011, art. 47: en ventas no presenciales el cliente puede
+retractarse dentro de los **5 días hábiles siguientes a la entrega**, sin
+tener que justificarlo, y la tienda tiene **30 días calendario** para
+devolverle la plata.
+
+Los días hábiles se cuentan con los festivos colombianos reales (Colombia
+mueve casi todos al lunes siguiente por la Ley Emiliani) y en hora de
+Bogotá — ver `app/core/dias_habiles.py`. El plazo corre desde
+`orders.delivered_at`, o sea desde que la dueña marcó la entrega, no
+desde que el cliente la confirmó.
+
+Una devolución es **parcial**: guarda qué ítems del pedido y cuántas
+unidades de cada uno, así que se puede devolver 1 de 3 camisetas. En
+`POST /returns/` el `order_item_id` es el `id` que viene en `items[]` del
+pedido, no el id del producto.
+
+| Método | Ruta | Quién | Qué hace |
+|---|---|---|---|
+| POST | `/returns/` | cliente | pide la devolución; 409 si el pedido no se entregó o el plazo venció |
+| GET | `/returns/` | cliente | sus devoluciones |
+| GET | `/returns/{id}` | cliente | una suya (404 si es de otro) |
+| PATCH | `/returns/{id}/cancel` | cliente | retira la solicitud, mientras no le respondan |
+| GET | `/returns/admin/all` | admin | todas, filtrables por `?status=` |
+| PATCH | `/returns/{id}/approve` | admin | la acepta |
+| PATCH | `/returns/{id}/reject` | admin | la niega; el motivo es obligatorio |
+| PATCH | `/returns/{id}/received` | admin | la mercancía volvió; `restock: false` si llegó dañada |
+| PATCH | `/returns/{id}/refund` | admin | registra que ya devolvió la plata |
+
+Estados: `REQUESTED → APPROVED → RECEIVED → REFUNDED`, o `REJECTED` /
+`CANCELLED`. Dos detalles que importan:
+
+- **El stock vuelve al recibir la mercancía**, no al pedir la devolución:
+  antes de eso el producto todavía está en la casa del cliente.
+- **Los reportes de `/sales` descuentan lo reembolsado** (`revenue`,
+  `cost` e `items_sold` van netos, y `returned_items`/`refunded_amount`
+  muestran cuánto se devolvió). Se descuenta recién en `REFUNDED`: una
+  solicitud que después se rechaza no puede borrar ingresos reales.
+
+El reembolso en sí se hace por fuera (Wompi o transferencia); la API
+registra el comprobante en `refund_reference`. Ojo: esto es *retracto*,
+no *garantía legal* — el producto que llegó defectuoso tiene otro plazo y
+otro flujo, que todavía no está implementado.
+
+En `GET /orders/` cada pedido trae `return_deadline` y
+`can_request_return` para que el frontend sepa si mostrar el botón.
 
 ## Cómo funciona la autenticación
 

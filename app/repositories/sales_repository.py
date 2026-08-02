@@ -9,20 +9,57 @@ from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.models.order import SALE_ORDER_STATUSES, Order, OrderItem
+from app.models.order_return import OrderReturn, OrderReturnItem, ReturnStatus
+
+
+def _devueltas_por_item(db: Session):
+    """Unidades ya reembolsadas de cada ítem de pedido.
+
+    Solo cuentan las devoluciones REFUNDED: mientras la plata no se haya
+    devuelto, la venta sigue siendo una venta. Si se descontara desde que
+    el cliente la solicita, una solicitud que después se rechaza habría
+    borrado ingresos reales del reporte.
+    """
+    return (
+        db.query(
+            OrderReturnItem.order_item_id.label("order_item_id"),
+            func.sum(OrderReturnItem.quantity).label("cantidad"),
+        )
+        .join(OrderReturn, OrderReturnItem.return_id == OrderReturn.id)
+        .filter(OrderReturn.status == ReturnStatus.REFUNDED)
+        .group_by(OrderReturnItem.order_item_id)
+        .subquery()
+    )
+
+
+def _columnas(devueltas):
+    """Las mismas métricas para el total y para cada período.
+
+    Todo va NETO de devoluciones: si de 3 camisetas vendidas se devolvió
+    1, el reporte muestra 2 vendidas y el ingreso de 2 — que es la plata
+    que efectivamente quedó en la tienda.
+    """
+    devueltas_qty = func.coalesce(devueltas.c.cantidad, 0)
+    netas = OrderItem.quantity - devueltas_qty
+    return [
+        func.sum(OrderItem.unit_price * netas).label("revenue"),
+        func.sum(func.coalesce(OrderItem.unit_cost, 0) * netas).label("cost"),
+        func.sum(netas).label("items_sold"),
+        func.sum(case((OrderItem.unit_cost.is_(None), netas), else_=0)).label(
+            "items_without_cost"
+        ),
+        func.count(func.distinct(Order.id)).label("orders_count"),
+        func.sum(devueltas_qty).label("returned_items"),
+        func.sum(OrderItem.unit_price * devueltas_qty).label("refunded_amount"),
+    ]
 
 
 def _base_query(db: Session):
+    devueltas = _devueltas_por_item(db)
     return (
-        db.query(
-            func.sum(OrderItem.unit_price * OrderItem.quantity).label("revenue"),
-            func.sum(func.coalesce(OrderItem.unit_cost, 0) * OrderItem.quantity).label("cost"),
-            func.sum(OrderItem.quantity).label("items_sold"),
-            func.sum(
-                case((OrderItem.unit_cost.is_(None), OrderItem.quantity), else_=0)
-            ).label("items_without_cost"),
-            func.count(func.distinct(Order.id)).label("orders_count"),
-        )
+        db.query(*_columnas(devueltas))
         .join(Order, OrderItem.order_id == Order.id)
+        .outerjoin(devueltas, devueltas.c.order_item_id == OrderItem.id)
         .filter(Order.status.in_(SALE_ORDER_STATUSES))
     )
 
@@ -40,6 +77,8 @@ def _row_to_summary(row) -> dict:
         "items_sold": int(row.items_sold or 0),
         "items_without_cost": int(row.items_without_cost or 0),
         "orders_count": int(row.orders_count or 0),
+        "returned_items": int(row.returned_items or 0),
+        "refunded_amount": row.refunded_amount or Decimal("0"),
     }
 
 
@@ -53,20 +92,18 @@ def get_sales_by_period(
     db: Session, granularity: str, *, date_from: datetime, date_to: datetime
 ) -> list[dict]:
     """granularity: 'day' | 'week' | 'month'. Usa date_trunc de Postgres
-    (Supabase corre sobre Postgres, así que esto asume ese motor)."""
+    (Supabase corre sobre Postgres, así que esto asume ese motor).
+
+    La devolución se resta del período en que se hizo la VENTA, no en el
+    que se devolvió: así el mes de la venta refleja lo que realmente
+    quedó de ese mes, aunque la devolución haya llegado después.
+    """
+    devueltas = _devueltas_por_item(db)
     period_col = func.date_trunc(granularity, Order.created_at).label("period")
     rows = (
-        db.query(
-            period_col,
-            func.sum(OrderItem.unit_price * OrderItem.quantity).label("revenue"),
-            func.sum(func.coalesce(OrderItem.unit_cost, 0) * OrderItem.quantity).label("cost"),
-            func.sum(OrderItem.quantity).label("items_sold"),
-            func.sum(
-                case((OrderItem.unit_cost.is_(None), OrderItem.quantity), else_=0)
-            ).label("items_without_cost"),
-            func.count(func.distinct(Order.id)).label("orders_count"),
-        )
+        db.query(period_col, *_columnas(devueltas))
         .join(Order, OrderItem.order_id == Order.id)
+        .outerjoin(devueltas, devueltas.c.order_item_id == OrderItem.id)
         .filter(
             Order.status.in_(SALE_ORDER_STATUSES),
             Order.created_at >= date_from,
