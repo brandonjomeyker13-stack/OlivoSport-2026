@@ -131,6 +131,7 @@ def update_profile(
     email: str | None,
     address: str | None = None,
     city: str | None = None,
+    phone: str | None = None,
 ) -> User:
     if email is not None and email != user.email:
         if user_repository.get_by_email(db, email) is not None:
@@ -142,6 +143,8 @@ def update_profile(
         user.address = address
     if city is not None:
         user.city = city
+    if phone is not None:
+        user.phone = phone
     db.commit()
     db.refresh(user)
     return user

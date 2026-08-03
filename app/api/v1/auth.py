@@ -205,6 +205,7 @@ class UserUpdate(BaseModel):
     email: EmailStr | None = None
     address: str | None = Field(None, min_length=5, max_length=255)
     city: str | None = Field(None, min_length=2, max_length=100)
+    phone: str | None = Field(None, min_length=7, max_length=20)
 
 
 @router.patch("/me", response_model=UserRead)
@@ -217,7 +218,7 @@ def update_my_profile(
     try:
         return user_service.update_profile(
             db, user=current_user, name=payload.name, email=payload.email,
-            address=payload.address, city=payload.city,
+            address=payload.address, city=payload.city, phone=payload.phone,
         )
     except user_service.EmailAlreadyRegisteredError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc

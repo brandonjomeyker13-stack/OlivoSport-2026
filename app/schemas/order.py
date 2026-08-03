@@ -17,6 +17,19 @@ class OrderItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class OrderCustomerRead(BaseModel):
+    """Datos del comprador, para que el panel admin sepa a quién y a
+    dónde entregar sin tener que ir a buscarlo aparte."""
+
+    name: str
+    email: str
+    phone: str | None = None
+    address: str | None = None
+    city: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class OrderRead(BaseModel):
     id: int
     status: OrderStatus
@@ -30,6 +43,9 @@ class OrderRead(BaseModel):
     return_deadline: datetime | None = None
     can_request_return: bool = False
     items: list[OrderItemRead]
+    # Se arma solo desde Order.user (la relación ya existe en el modelo,
+    # no hace falta ningún join manual ni endpoint aparte).
+    user: OrderCustomerRead
 
     model_config = ConfigDict(from_attributes=True)
 

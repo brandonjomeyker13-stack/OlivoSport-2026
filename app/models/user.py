@@ -15,6 +15,7 @@ class User(Base):
     # la tiene (el frontend decide cuándo mostrar el formulario).
     address = Column(String(255), nullable=True)
     city = Column(String(100), nullable=True)
+    phone = Column(String(20), nullable=True)
     # Nullable: un usuario que se registró SOLO con Google no tiene
     # contraseña propia (no debe poder loguearse con password si no la
     # tiene, ver user_service.authenticate).
