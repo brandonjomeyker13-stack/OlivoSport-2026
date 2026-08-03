@@ -1,10 +1,10 @@
 """
 App de FastAPI. Se corre con:
 
-    uvicorn app.main:app --reload
+    uvicorn app.main_app:app --reload
 
 (el `main.py` de la raíz sigue siendo solo para crear las tablas, no lo
-mezcles con este archivo).
+mezcles con este archivo. `app.main` no existe: ese comando falla).
 """
 
 import logging
