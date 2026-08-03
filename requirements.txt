@@ -14,4 +14,5 @@ pyjwt>=2.8.0
 supabase>=2.4.0
 slowapi>=0.1.9
 google-auth>=2.29.0
-requests>=2.31.0holidays>=0.101,<1.0
+requests>=2.31.0
+holidays>=0.101,<1.0
