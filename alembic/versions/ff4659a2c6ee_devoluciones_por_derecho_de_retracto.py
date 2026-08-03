@@ -1,7 +1,7 @@
 """devoluciones por derecho de retracto
 
 Revision ID: ff4659a2c6ee
-Revises: a2374800a354
+Revises: 888f50771db4
 Create Date: 2026-08-02 00:00:17.432561
 
 Solo agrega tablas nuevas: no toca ni borra nada de lo que ya existe, así
@@ -16,7 +16,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "ff4659a2c6ee"
-down_revision: str | Sequence[str] | None = "a2374800a354"
+down_revision: str | Sequence[str] | None = "888f50771db4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
